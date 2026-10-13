@@ -4,11 +4,11 @@
 
 ## 已配置的服务
 
-| 服务 | 地址 |
-| --- | --- |
-| SubConverter-Extended | https://api.miaoceo.com |
-| subconverter | https://sub.miaoceo.com |
-| 短链 Worker | https://i.miaoceo.com/short |
+| 服务                  | 地址                        |
+| --------------------- | --------------------------- |
+| SubConverter-Extended | https://api.miaoceo.com     |
+| subconverter          | https://sub.miaoceo.com     |
+| 短链 Worker           | https://i.miaoceo.com/short |
 
 两种后端使用独立能力配置，Extended 提供 22 种输出，Standard 提供 16 种输出。页面通过 `/version` 读取在线身份与版本，不会根据域名或版本号自动更换引擎类型。
 
@@ -48,13 +48,21 @@ Extended 可使用“添加 Provider”组合名称、标签、独立间隔。�
 
 参数的源代码依据、默认值、被忽略的兼容参数及目标差异见 [后端核对记录](docs/backend-compatibility.md)。
 
+## Aethersailor 模板
+
+Extended 的 Clash / Mihomo 与 ClashR 配置列表新增 Aethersailor 分组，包含标准、轻量、GFW 极简、重度分流各自的常规及故障转移版本，共 8 个模板。使用 [Aethersailor 原始 INI 地址](https://github.com/Aethersailor/Custom_OpenClash_Rules/tree/main/cfg)，不修改模板内容。现有自定义配置与 ACL4SSR 选项保留。
+
+输出配置中的“规则输出”可选择跟随后端、展开远程规则集为内联规则，或保留远程 Rule Provider。它与高级参数的 `expand` 是同一个值；仅输出节点时没有规则或策略组。`GEOSITE` / `GEOIP` 条目仍由客户端处理，展开规则集不会把地理数据库转换为逐条域名。
+
+配置 `aethersailorPresets: false` 可以关闭新增模板。`npm run update:presets` 可刷新 Aethersailor 模板目录，脚本只提取该作者的条目，不引入其他作者模板。
+
 ## 验证范围
 
 `npm test` 包含编码与参数边界、网络错误处理，以及实际 Vue 组件的 DOM 交互测试（切换引擎、字段清理、请求头、诊断和过期异步结果）。DOM 测试不等同于真实浏览器视觉验收。
 
 可选公网只读检查：`node scripts/smoke-backends.mjs`。它使用 TEST-NET 地址的合成 SS 节点，检查两端 `/version`、Clash / sing-box 转换、Extended 诊断及 CORS 响应；不会使用真实订阅，也不会在服务器上编译代码。
 
-2026-10-13 的 17 项测试与两套前端构建通过；静态页面及运行时配置 HTTP 检查通过。短链 POST 返回 200，GET 返回 302，Location 与生成链接完全一致。公网 Extended sing-box 曾返回一次 503，随后同请求成功；在线能力由实际后端版本和配置决定。Windows 浏览器集成连接失败，未完成真实浏览器截图验收。
+2026-10-13 的 22 项测试与新前端构建通过；新增模板的筛选、去重、链接编码和规则展开选择均已覆盖。此前两套前端构建、静态页面及运行时配置 HTTP 检查通过。短链 POST 返回 200，GET 返回 302，Location 与生成链接完全一致。公网 Extended sing-box 曾返回一次 503，随后同请求成功；在线能力由实际后端版本和配置决定。Windows 浏览器集成连接失败，未完成真实浏览器截图验收。
 
 ## 项目来源
 

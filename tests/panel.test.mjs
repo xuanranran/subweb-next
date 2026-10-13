@@ -96,11 +96,32 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     await settle();
     assert.equal(new URL(copied.at(-1)).searchParams.get('target'), 'clash');
 
+    assert.equal(root.querySelectorAll('#config optgroup option').length, 8);
+    const aethersailor = [...root.querySelectorAll('#config optgroup')].find(
+      (group) => group.label === 'Aethersailor',
+    );
+    assert.equal(aethersailor.querySelectorAll('option').length, 8);
+    assert.equal(root.querySelector('#config').textContent.includes('eHpo1'), false);
+    const ruleTemplate = [...aethersailor.querySelectorAll('option')].find((option) =>
+      option.value.endsWith('/Custom_Clash_GFW.ini'),
+    ).value;
+    await setInput('#config', ruleTemplate);
+    await setInput('#rule-expansion', 'true');
+    assert.equal(new URL(root.querySelector('#result-link').value).searchParams.get('config'), ruleTemplate);
+    assert.equal(new URL(root.querySelector('#result-link').value).searchParams.get('expand'), 'true');
+    await setInput('#rule-expansion', 'false');
+    assert.equal(new URL(root.querySelector('#result-link').value).searchParams.get('expand'), 'false');
+    assert.equal(requests.length, 2, 'template selection and expansion stay local');
+
     await setInput('#target', 'stash');
+    assert.equal(root.querySelector('#config').value, '');
+    assert.equal(root.querySelectorAll('#config optgroup').length, 0);
+    assert.equal(root.querySelector('#rule-expansion'), null);
     engine('subconverter').click();
     await settle();
     assert.equal(root.querySelector('#target').value, 'clash');
     assert.equal(root.querySelectorAll('#target option').length, 16);
+    assert.equal(root.querySelectorAll('#config optgroup').length, 0);
     assert.equal(new URL(root.querySelector('#result-link').value).hostname, 'sub.miaoceo.com');
     button('高级参数').click();
     await settle();

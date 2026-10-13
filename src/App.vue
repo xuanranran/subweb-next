@@ -4,6 +4,7 @@ import OptionField from './components/OptionField.vue';
 import { PROFILES, SECTIONS, cleanOptions, parametersFor, targetsFor } from './lib/backends.js';
 import { buildConversion, sourceLines } from './lib/converter.js';
 import { copyText, createShortLink, fetchText, readVersion } from './lib/network.js';
+import { templatesFor, templateGroups } from './lib/presets.js';
 
 const runtime = window.config || {};
 const backends = reactive(
@@ -51,8 +52,23 @@ const providerForm = reactive({ name: '', url: '', tag: '', interval: '' });
 const availableTargets = computed(() => targetsFor(profile.value));
 const chosenTarget = computed(() => availableTargets.value.find((t) => t.value === target.value));
 const templates = computed(() =>
-  (runtime.remoteConfigOptions || []).filter((c) => !c.targets || c.targets.includes(target.value)),
+  templatesFor(
+    runtime.remoteConfigOptions,
+    profile.value,
+    target.value,
+    runtime.aethersailorPresets !== false,
+  ),
 );
+const groupedTemplates = computed(() => templateGroups(templates.value));
+const selectedTemplate = computed(() =>
+  templates.value.find((template) => template.value === configChoice.value),
+);
+const ruleExpansion = computed({
+  get: () => options.expand ?? '',
+  set: (value) => {
+    options.expand = value;
+  },
+});
 const config = computed(() => (configChoice.value === 'custom' ? customConfig.value : configChoice.value));
 const fields = computed(() => parametersFor(profile.value, target.value));
 const sections = computed(() => SECTIONS.filter((s) => fields.value.some((f) => f.section === s.key)));
@@ -404,7 +420,9 @@ onMounted(checkVersions);
               ><label for="config"
                 >远程配置<select id="config" v-model="configChoice">
                   <option value="">使用后端默认配置</option>
-                  <option v-for="c in templates" :key="c.value" :value="c.value">{{ c.text }}</option>
+                  <optgroup v-for="group in groupedTemplates" :key="group.label" :label="group.label">
+                    <option v-for="c in group.entries" :key="c.value" :value="c.value">{{ c.text }}</option>
+                  </optgroup>
                   <option value="custom">自定义配置 URL</option>
                 </select></label
               >
@@ -415,6 +433,29 @@ onMounted(checkVersions);
                 placeholder="https://example.com/config.ini"
                 autocomplete="off"
             /></label>
+            <p v-if="selectedTemplate" class="field-help">
+              {{ selectedTemplate.text }} ·
+              <a :href="selectedTemplate.value" target="_blank" rel="noreferrer">查看模板 ↗</a>
+            </p>
+            <label
+              v-if="profile === 'extended' && ['clash', 'clashr'].includes(target)"
+              for="rule-expansion"
+              class="spaced"
+            >
+              规则输出
+              <select id="rule-expansion" v-model="ruleExpansion">
+                <option value="">跟随后端 · 默认保留远程规则</option>
+                <option value="true">展开规则 · 内联到配置</option>
+                <option value="false">保留远程规则 · Rule Provider</option>
+              </select>
+              <span class="field-help"
+                >展开后由后端读取规则集并写入配置；保留远程规则时由客户端更新规则集。GEOSITE / GEOIP
+                条目仍由客户端处理。</span
+              >
+              <span v-if="options.list === 'true' || options.list === true" class="field-help"
+                >当前仅输出节点，不包含规则或策略组。需要完整配置时，请将高级参数“仅输出节点”设为关闭。</span
+              >
+            </label>
             <label v-if="target === 'surge'" class="spaced"
               >Surge 版本<select v-model="ver">
                 <option value="">后端默认 · {{ PROFILES[profile].surgeDefault }}</option>
