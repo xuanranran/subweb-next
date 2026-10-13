@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import OptionField from './components/OptionField.vue';
-import { vLiquidGlass } from './lib/liquid-glass.js';
 import { PROFILES, SECTIONS, cleanOptions, parametersFor, targetsFor } from './lib/backends.js';
 import { buildConversion, sourceLines } from './lib/converter.js';
 import { copyText, createShortLink, fetchText, readVersion } from './lib/network.js';
@@ -303,63 +302,54 @@ onMounted(() => checkVersions(true));
 </script>
 
 <template>
-  <div class="ambient" aria-hidden="true"><i></i><i></i><i></i></div>
   <div class="shell">
-    <header class="topbar">
-      <a href="./" class="brand" aria-label="Subweb 首页"
-        ><span class="brand-icon"
-          ><svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="M5 8h14m-4-4 4 4-4 4M19 16H5m4 4-4-4 4-4"
-              stroke="currentColor"
-              stroke-width="1.7"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            /></svg></span
-        >{{ runtime.siteName || 'Subweb' }}<span class="brand-tag">NEXT</span></a
-      >
-      <div class="top-actions">
-        <a :href="PROFILES[profile].source" target="_blank" rel="noreferrer">后端源码 ↗</a
-        ><button
-          class="icon-button"
-          @click="theme = theme === 'light' ? 'dark' : 'light'"
-          :aria-label="theme === 'light' ? '切换深色模式' : '切换浅色模式'"
+    <div class="navigation">
+      <header class="topbar">
+        <a href="./" class="brand" aria-label="Subweb 首页"
+          ><span class="brand-icon"
+            ><svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M5 8h14m-4-4 4 4-4 4M19 16H5m4 4-4-4 4-4"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              /></svg></span
+          >{{ runtime.siteName || 'Subweb' }}<span class="brand-tag">NEXT</span></a
         >
-          <svg v-if="theme === 'light'" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="M20 14.2A8 8 0 0 1 9.8 4a8.2 8.2 0 1 0 10.2 10.2Z"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linejoin="round"
-            />
-          </svg>
-          <svg v-else viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.6" />
-            <path
-              d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-            />
-          </svg>
-        </button>
-      </div>
-    </header>
-    <main>
-      <div class="intro">
-        <div>
-          <p class="eyebrow">SUBSCRIPTION WORKSPACE</p>
-          <h1>一份订阅，你的每个客户端。</h1>
-          <p class="subtitle">选择转换引擎，整理订阅，生成适合你的配置。</p>
+        <div class="top-actions">
+          <a :href="PROFILES[profile].source" target="_blank" rel="noreferrer">后端源码 ↗</a
+          ><button
+            class="icon-button"
+            @click="theme = theme === 'light' ? 'dark' : 'light'"
+            :aria-label="theme === 'light' ? '切换深色模式' : '切换浅色模式'"
+          >
+            <svg v-if="theme === 'light'" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M20 14.2A8 8 0 0 1 9.8 4a8.2 8.2 0 1 0 10.2 10.2Z"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.6" />
+              <path
+                d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
         </div>
-        <span class="intro-stamp"
-          ><span class="glass-emblem" aria-hidden="true"><i></i><i></i><i></i></span
-          ><span>两种引擎<br />一个面板</span></span
-        >
-      </div>
-      <section class="engine-section" aria-labelledby="engine-title">
+      </header>
+    </div>
+    <main>
+      <h1 class="sr-only">订阅转换工作台</h1>
+      <section class="engine-section" id="convert" aria-labelledby="engine-title">
         <div class="section-heading">
-          <h2 id="engine-title">转换引擎</h2>
+          <h2 id="engine-title"><span class="section-number">01</span>选择转换引擎</h2>
           <button
             class="text-button"
             @click="checkVersions()"
@@ -368,22 +358,55 @@ onMounted(() => checkVersions(true));
             ↻ 读取在线版本
           </button>
         </div>
-        <div class="engine-grid glass-scene" v-liquid-glass="theme" :class="{ 'has-local': localBackend }">
-          <div class="glass-art engine-art" data-glass-content aria-hidden="true"></div>
+        <div class="mobile-engine-picker">
+          <label for="mobile-backend" class="sr-only">选择转换后端</label>
+          <select id="mobile-backend" :value="selected" @change="selectBackend($event.target.value)">
+            <option v-for="b in backends" :key="b.id" :value="b.id">{{ b.text }}</option>
+            <option v-if="selected === 'custom'" value="custom">自定义后端</option>
+          </select>
+          <div class="mobile-engine-address">
+            <code>{{ address.replace(/^https?:\/\//, '') || '请填写自定义地址' }}</code>
+            <details class="mobile-engine-status" :key="selected">
+              <summary>
+                {{
+                  versions[selected]?.loading
+                    ? '读取中…'
+                    : versions[selected]?.text
+                      ? '版本已读取'
+                      : versions[selected]?.error
+                        ? '读取失败'
+                        : '待检查'
+                }}
+              </summary>
+              <p>
+                {{
+                  versions[selected]?.text ||
+                  versions[selected]?.error ||
+                  '点击上方“读取在线版本”检查后端版本。'
+                }}
+              </p>
+            </details>
+          </div>
+        </div>
+        <div class="engine-grid" :class="{ 'has-local': localBackend }">
           <button
             v-for="b in backends"
             :key="b.id"
             type="button"
             class="engine-card"
-            data-glass-surface
             :class="{ selected: selected === b.id, local: b.local }"
             :aria-pressed="selected === b.id"
             @click="selectBackend(b.id)"
           >
             <div class="engine-top">
-              <span class="engine-glyph" :class="b.profile">{{
-                b.local ? '⌂' : b.profile === 'extended' ? '✦' : '⇄'
-              }}</span
+              <span class="engine-glyph" :class="b.profile"
+                ><svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path v-if="b.local" d="m3 10 9-7 9 7M5 9v11h14V9M10 20v-6h4v6" />
+                  <path
+                    v-else-if="b.profile === 'extended'"
+                    d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"
+                  />
+                  <path v-else d="M4 8h16m-4-4 4 4-4 4M20 16H4m4 4-4-4 4-4" /></svg></span
               ><span class="selection-dot"></span>
             </div>
             <strong>{{ b.text }}</strong
@@ -432,11 +455,10 @@ onMounted(() => checkVersions(true));
 
       <div class="workspace">
         <div class="editor">
-          <div class="glass-scene" v-liquid-glass="theme">
-            <div class="glass-art" data-glass-content aria-hidden="true"></div>
-            <section class="panel" data-glass-surface>
+          <div class="form-section">
+            <section class="panel">
               <div class="panel-heading">
-                <h2><span class="step">01</span>订阅来源</h2>
+                <h2><span class="step">02</span>订阅来源</h2>
                 <span class="muted">{{ sourceCount }} 条来源</span>
               </div>
               <label class="sr-only" for="sources">订阅链接或节点，每行一条</label>
@@ -477,11 +499,10 @@ onMounted(() => checkVersions(true));
             </section>
           </div>
 
-          <div class="glass-scene" v-liquid-glass="theme">
-            <div class="glass-art" data-glass-content aria-hidden="true"></div>
-            <section class="panel" data-glass-surface>
+          <div class="form-section">
+            <section class="panel">
               <div class="panel-heading">
-                <h2><span class="step">02</span>输出配置</h2>
+                <h2><span class="step">03</span>输出配置</h2>
                 <span class="small-badge">{{ PROFILES[profile].short }}</span>
               </div>
               <div class="two-columns">
@@ -540,9 +561,8 @@ onMounted(() => checkVersions(true));
             </section>
           </div>
 
-          <div class="glass-scene" v-liquid-glass="theme">
-            <div class="glass-art" data-glass-content aria-hidden="true"></div>
-            <section class="panel advanced-panel" data-glass-surface>
+          <div class="form-section">
+            <section class="panel advanced-panel">
               <button
                 class="accordion-heading"
                 @click="advanced = !advanced"
@@ -550,7 +570,7 @@ onMounted(() => checkVersions(true));
                 aria-controls="advanced-options"
               >
                 <h2>
-                  <span class="step">03</span>高级参数<span class="count" v-if="overrideCount">{{
+                  <span class="step">04</span>高级参数<span class="count" v-if="overrideCount">{{
                     overrideCount
                   }}</span>
                 </h2>
@@ -596,19 +616,21 @@ onMounted(() => checkVersions(true));
           </div>
         </div>
 
-        <aside class="result-column">
-          <div class="glass-scene" v-liquid-glass="theme">
-            <div class="glass-art result-art" data-glass-content aria-hidden="true"></div>
-            <section class="panel result-panel" data-glass-surface>
+        <div class="result-column">
+          <div class="result-section">
+            <section class="panel result-panel">
               <div class="panel-heading">
-                <h2>转换结果</h2>
+                <h2><span class="result-indicator"></span>转换结果</h2>
                 <span class="format-tag">{{ chosenTarget?.format }}</span>
               </div>
               <div class="result-summary">
                 <span class="result-mark">⇄</span>
                 <div>
                   <strong>{{ chosenTarget?.label }}</strong
-                  ><span>{{ PROFILES[profile].short }} · {{ sourceCount }} 条来源</span>
+                  ><span
+                    >{{ PROFILES[profile].short }} · {{ availableTargets.length }} 种格式 ·
+                    {{ sourceCount }} 条来源</span
+                  >
                 </div>
               </div>
               <label for="result-link">订阅链接 <span class="muted">实时生成</span></label>
@@ -677,7 +699,7 @@ onMounted(() => checkVersions(true));
               <p class="result-footnote">面板不保存订阅和密钥。短链服务会保存生成链接，用于后续跳转。</p>
             </section>
           </div>
-          <section class="context-card">
+          <section class="context-card" id="about">
             <span class="eyebrow">当前能力</span
             ><strong>{{ profile === 'extended' ? '为远程订阅而设计' : '保留完整转换控制' }}</strong>
             <p>
@@ -689,11 +711,10 @@ onMounted(() => checkVersions(true));
             </p>
             <a :href="PROFILES[profile].source" target="_blank" rel="noreferrer">查看后端文档 ↗</a>
           </section>
-        </aside>
+        </div>
       </div>
-      <div v-if="currentOutput" class="glass-scene output-stage" v-liquid-glass="theme">
-        <div class="glass-art" data-glass-content aria-hidden="true"></div>
-        <section class="panel output-panel" data-glass-surface>
+      <div v-if="currentOutput" class="output-stage">
+        <section class="panel output-panel">
           <div class="panel-heading">
             <h2>{{ currentOutput.diagnostic ? '转换诊断 · JSON' : '配置预览' }}</h2>
             <button class="text-button" @click="output = null">关闭 ×</button>
@@ -702,7 +723,10 @@ onMounted(() => checkVersions(true));
         </section>
       </div>
     </main>
-    <footer><span>Subweb Next · 纯前端订阅工作台</span><span>适配 Standard & Extended</span></footer>
+    <footer>
+      <span>Subweb Next <span class="footer-dot">·</span> 订阅转换工作台</span
+      ><span>Standard & Extended</span>
+    </footer>
     <div v-if="toast" class="toast" role="status">✓ {{ toast }}</div>
   </div>
 </template>

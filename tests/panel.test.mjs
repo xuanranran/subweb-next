@@ -279,6 +279,20 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     assert.equal(domainRoot.querySelectorAll('.engine-card').length, 2);
     assert.equal(requests.length, 2, 'only the configured public backends are checked');
     assert.ok(domainRoot.querySelector('.engine-card.selected strong').textContent.includes('Extended'));
+    const mobileSelector = domainRoot.querySelector('#mobile-backend');
+    assert.equal(mobileSelector.options.length, 2, 'mobile also hides the local backend on domains');
+    mobileSelector.value = '1';
+    mobileSelector.dispatchEvent(new window.Event('change', { bubbles: true }));
+    await settle();
+    assert.equal(domainRoot.querySelectorAll('#target option').length, 16);
+    assert.equal(domainRoot.querySelector('.mobile-engine-address code').textContent, 'sub.miaoceo.com');
+    assert.equal(domainRoot.querySelector('.engine-card.selected strong').textContent, 'subconverter');
+    mobileSelector.value = '0';
+    mobileSelector.dispatchEvent(new window.Event('change', { bubbles: true }));
+    await settle();
+    assert.equal(domainRoot.querySelectorAll('#target option').length, 22);
+    assert.equal(domainRoot.querySelector('.mobile-engine-address code').textContent, 'api.miaoceo.com');
+    assert.equal(requests.length, 2, 'changing the mobile selection does not send subscription requests');
   } finally {
     if (app) app.unmount();
     await window.happyDOM.close();
