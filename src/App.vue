@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import OptionField from './components/OptionField.vue';
+import { vLiquidGlass } from './lib/liquid-glass.js';
 import { PROFILES, SECTIONS, cleanOptions, parametersFor, targetsFor } from './lib/backends.js';
 import { buildConversion, sourceLines } from './lib/converter.js';
 import { copyText, createShortLink, fetchText, readVersion } from './lib/network.js';
@@ -139,8 +140,8 @@ async function run(name, action) {
       e.name === 'TimeoutError'
         ? '请求超时，请检查后端可用性。'
         : e.message === 'Failed to fetch'
-        ? '请求未完成。请检查后端 CORS、网络和 Cloudflare 验证；HTTP 后端也可能被 HTTPS 页面拦截。'
-        : e.message;
+          ? '请求未完成。请检查后端 CORS、网络和 Cloudflare 验证；HTTP 后端也可能被 HTTPS 页面拦截。'
+          : e.message;
   } finally {
     busy.value = '';
   }
@@ -302,11 +303,20 @@ onMounted(() => checkVersions(true));
 </script>
 
 <template>
+  <div class="ambient" aria-hidden="true"><i></i><i></i><i></i></div>
   <div class="shell">
     <header class="topbar">
       <a href="./" class="brand" aria-label="Subweb 首页"
-        ><span class="brand-icon">⇄</span>{{ runtime.siteName || 'Subweb'
-        }}<span class="brand-tag">NEXT</span></a
+        ><span class="brand-icon"
+          ><svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M5 8h14m-4-4 4 4-4 4M19 16H5m4 4-4-4 4-4"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            /></svg></span
+        >{{ runtime.siteName || 'Subweb' }}<span class="brand-tag">NEXT</span></a
       >
       <div class="top-actions">
         <a :href="PROFILES[profile].source" target="_blank" rel="noreferrer">后端源码 ↗</a
@@ -315,7 +325,23 @@ onMounted(() => checkVersions(true));
           @click="theme = theme === 'light' ? 'dark' : 'light'"
           :aria-label="theme === 'light' ? '切换深色模式' : '切换浅色模式'"
         >
-          {{ theme === 'light' ? '◐' : '☀' }}
+          <svg v-if="theme === 'light'" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M20 14.2A8 8 0 0 1 9.8 4a8.2 8.2 0 1 0 10.2 10.2Z"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <svg v-else viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.6" />
+            <path
+              d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+            />
+          </svg>
         </button>
       </div>
     </header>
@@ -326,7 +352,10 @@ onMounted(() => checkVersions(true));
           <h1>一份订阅，你的每个客户端。</h1>
           <p class="subtitle">选择转换引擎，整理订阅，生成适合你的配置。</p>
         </div>
-        <span class="intro-stamp"><span>⇄</span> 两种引擎<br />一个面板</span>
+        <span class="intro-stamp"
+          ><span class="glass-emblem" aria-hidden="true"><i></i><i></i><i></i></span
+          ><span>两种引擎<br />一个面板</span></span
+        >
       </div>
       <section class="engine-section" aria-labelledby="engine-title">
         <div class="section-heading">
@@ -339,12 +368,14 @@ onMounted(() => checkVersions(true));
             ↻ 读取在线版本
           </button>
         </div>
-        <div class="engine-grid" :class="{ 'has-local': localBackend }">
+        <div class="engine-grid glass-scene" v-liquid-glass="theme" :class="{ 'has-local': localBackend }">
+          <div class="glass-art engine-art" data-glass-content aria-hidden="true"></div>
           <button
             v-for="b in backends"
             :key="b.id"
             type="button"
             class="engine-card"
+            data-glass-surface
             :class="{ selected: selected === b.id, local: b.local }"
             :aria-pressed="selected === b.id"
             @click="selectBackend(b.id)"
@@ -401,232 +432,251 @@ onMounted(() => checkVersions(true));
 
       <div class="workspace">
         <div class="editor">
-          <section class="panel">
-            <div class="panel-heading">
-              <h2><span class="step">01</span>订阅来源</h2>
-              <span class="muted">{{ sourceCount }} 条来源</span>
-            </div>
-            <label class="sr-only" for="sources">订阅链接或节点，每行一条</label>
-            <textarea
-              id="sources"
-              v-model="sources"
-              class="source-input"
-              rows="6"
-              spellcheck="false"
-              autocomplete="off"
-              placeholder="粘贴订阅链接或节点，每行一条&#10;https://example.com/subscription&#10;ss://… 或 vmess://…"
-            ></textarea>
-            <div class="source-footer">
-              <span class="field-help">支持多行或 | 分隔。链接仅在预览、下载或短链时发送。</span
-              ><button
-                v-if="supportsProvider"
-                class="text-button"
-                @click="providerOpen = !providerOpen"
-                :aria-expanded="providerOpen"
-              >
-                ＋ 添加 Provider
-              </button>
-            </div>
-            <div v-if="providerOpen" class="provider-composer">
-              <div class="two-columns">
-                <label>Provider 名称<input v-model="providerForm.name" placeholder="例如 香港机场" /></label
-                ><label>来源标签（可选）<input v-model="providerForm.tag" placeholder="例如 HK" /></label>
+          <div class="glass-scene" v-liquid-glass="theme">
+            <div class="glass-art" data-glass-content aria-hidden="true"></div>
+            <section class="panel" data-glass-surface>
+              <div class="panel-heading">
+                <h2><span class="step">01</span>订阅来源</h2>
+                <span class="muted">{{ sourceCount }} 条来源</span>
               </div>
-              <label>订阅 URL<input v-model="providerForm.url" placeholder="https://example.com/sub" /></label
-              ><label v-if="['clash', 'clashr', 'surge', 'quanx', 'stash'].includes(target)"
-                >独立更新间隔（秒，可选）<input
-                  v-model="providerForm.interval"
-                  inputmode="numeric"
-                  placeholder="21600" /></label
-              ><button class="secondary" @click="addProvider">添加到来源</button>
-            </div>
-          </section>
-
-          <section class="panel">
-            <div class="panel-heading">
-              <h2><span class="step">02</span>输出配置</h2>
-              <span class="small-badge">{{ PROFILES[profile].short }}</span>
-            </div>
-            <div class="two-columns">
-              <label for="target"
-                >目标客户端<select id="target" v-model="target">
-                  <option v-for="t in availableTargets" :key="t.value" :value="t.value">{{ t.label }}</option>
-                </select></label
-              ><label for="config"
-                >远程配置<select id="config" v-model="configChoice">
-                  <option value="">使用后端默认配置</option>
-                  <optgroup v-for="group in groupedTemplates" :key="group.label" :label="group.label">
-                    <option v-for="c in group.entries" :key="c.value" :value="c.value">{{ c.text }}</option>
-                  </optgroup>
-                  <option value="custom">自定义配置 URL</option>
-                </select></label
-              >
-            </div>
-            <label v-if="configChoice === 'custom'" class="spaced"
-              >配置 URL<input
-                v-model="customConfig"
-                placeholder="https://example.com/config.ini"
+              <label class="sr-only" for="sources">订阅链接或节点，每行一条</label>
+              <textarea
+                id="sources"
+                v-model="sources"
+                class="source-input"
+                rows="6"
+                spellcheck="false"
                 autocomplete="off"
-            /></label>
-            <p v-if="selectedTemplate" class="field-help">
-              {{ selectedTemplate.text }} ·
-              <a :href="selectedTemplate.value" target="_blank" rel="noreferrer">查看模板 ↗</a>
-            </p>
-            <label
-              v-if="profile === 'extended' && ['clash', 'clashr'].includes(target)"
-              for="rule-expansion"
-              class="spaced"
-            >
-              规则输出
-              <select id="rule-expansion" v-model="ruleExpansion">
-                <option value="">跟随后端 · 默认保留远程规则</option>
-                <option value="true">展开规则 · 内联到配置</option>
-                <option value="false">保留远程规则 · Rule Provider</option>
-              </select>
-              <span class="field-help"
-                >展开后由后端读取规则集并写入配置；保留远程规则时由客户端更新规则集。GEOSITE / GEOIP
-                条目仍由客户端处理。</span
-              >
-              <span v-if="options.list === 'true' || options.list === true" class="field-help"
-                >当前仅输出节点，不包含规则或策略组。需要完整配置时，请将高级参数“仅输出节点”设为关闭。</span
-              >
-            </label>
-            <label v-if="target === 'surge'" class="spaced"
-              >Surge 版本<select v-model="ver">
-                <option value="">后端默认 · {{ PROFILES[profile].surgeDefault }}</option>
-                <option v-for="v in [2, 3, 4, 5]" :key="v" :value="String(v)">Surge {{ v }}</option>
-              </select></label
-            >
-            <p class="engine-note"><span>ⓘ</span>{{ description }}</p>
-          </section>
-
-          <section class="panel advanced-panel">
-            <button
-              class="accordion-heading"
-              @click="advanced = !advanced"
-              :aria-expanded="advanced"
-              aria-controls="advanced-options"
-            >
-              <h2>
-                <span class="step">03</span>高级参数<span class="count" v-if="overrideCount">{{
-                  overrideCount
-                }}</span>
-              </h2>
-              <span>{{ advanced ? '收起 −' : '展开 ＋' }}</span>
-            </button>
-            <p class="advanced-caption">留空或“跟随后端”保留引擎默认行为。</p>
-            <div v-if="advanced" id="advanced-options">
-              <div class="param-tabs" role="tablist" aria-label="参数分类">
-                <button
-                  v-for="s in sections"
-                  :key="s.key"
-                  role="tab"
-                  :aria-selected="activeSection === s.key"
-                  :class="{ active: activeSection === s.key }"
-                  @click="activeSection = s.key"
+                placeholder="粘贴订阅链接或节点，每行一条&#10;https://example.com/subscription&#10;ss://… 或 vmess://…"
+              ></textarea>
+              <div class="source-footer">
+                <span class="field-help">支持多行或 | 分隔。链接仅在预览、下载或短链时发送。</span
+                ><button
+                  v-if="supportsProvider"
+                  class="text-button"
+                  @click="providerOpen = !providerOpen"
+                  :aria-expanded="providerOpen"
                 >
-                  {{ s.label }}
+                  ＋ 添加 Provider
                 </button>
               </div>
-              <div class="options-grid">
-                <OptionField v-for="f in currentFields" :key="f.key" :field="f" v-model="options[f.key]" />
+              <div v-if="providerOpen" class="provider-composer">
+                <div class="two-columns">
+                  <label>Provider 名称<input v-model="providerForm.name" placeholder="例如 香港机场" /></label
+                  ><label>来源标签（可选）<input v-model="providerForm.tag" placeholder="例如 HK" /></label>
+                </div>
+                <label
+                  >订阅 URL<input v-model="providerForm.url" placeholder="https://example.com/sub" /></label
+                ><label v-if="['clash', 'clashr', 'surge', 'quanx', 'stash'].includes(target)"
+                  >独立更新间隔（秒，可选）<input
+                    v-model="providerForm.interval"
+                    inputmode="numeric"
+                    placeholder="21600" /></label
+                ><button class="secondary" @click="addProvider">添加到来源</button>
               </div>
-              <label v-if="activeSection === 'provider' && options.provider_headers" class="spaced"
-                >请求头值 · JSON<textarea
-                  v-model="headerValues"
-                  rows="3"
-                  spellcheck="false"
+            </section>
+          </div>
+
+          <div class="glass-scene" v-liquid-glass="theme">
+            <div class="glass-art" data-glass-content aria-hidden="true"></div>
+            <section class="panel" data-glass-surface>
+              <div class="panel-heading">
+                <h2><span class="step">02</span>输出配置</h2>
+                <span class="small-badge">{{ PROFILES[profile].short }}</span>
+              </div>
+              <div class="two-columns">
+                <label for="target"
+                  >目标客户端<select id="target" v-model="target">
+                    <option v-for="t in availableTargets" :key="t.value" :value="t.value">
+                      {{ t.label }}
+                    </option>
+                  </select></label
+                ><label for="config"
+                  >远程配置<select id="config" v-model="configChoice">
+                    <option value="">使用后端默认配置</option>
+                    <optgroup v-for="group in groupedTemplates" :key="group.label" :label="group.label">
+                      <option v-for="c in group.entries" :key="c.value" :value="c.value">{{ c.text }}</option>
+                    </optgroup>
+                    <option value="custom">自定义配置 URL</option>
+                  </select></label
+                >
+              </div>
+              <label v-if="configChoice === 'custom'" class="spaced"
+                >配置 URL<input
+                  v-model="customConfig"
+                  placeholder="https://example.com/config.ini"
                   autocomplete="off"
-                  placeholder='{"X-Subscription-Key":"你的值"}'
-                ></textarea
-                ><span class="field-help"
-                  >值保留在当前页面内存中。下载需要后端 CORS
-                  允许这些请求头；复制链接和短链无法传递请求头值。</span
-                ></label
-              >
-              <p v-if="profile === 'extended' && activeSection === 'rules'" class="engine-note">
-                Extended 的 Clash 始终使用新字段名；自定义分组与规则请写入远程配置。classic 在此后端只控制
-                Clash。
+              /></label>
+              <p v-if="selectedTemplate" class="field-help">
+                {{ selectedTemplate.text }} ·
+                <a :href="selectedTemplate.value" target="_blank" rel="noreferrer">查看模板 ↗</a>
               </p>
-              <button class="text-button reset-options" @click="resetOptions">恢复全部默认参数</button>
-            </div>
-          </section>
+              <label
+                v-if="profile === 'extended' && ['clash', 'clashr'].includes(target)"
+                for="rule-expansion"
+                class="spaced"
+              >
+                规则输出
+                <select id="rule-expansion" v-model="ruleExpansion">
+                  <option value="">跟随后端 · 默认保留远程规则</option>
+                  <option value="true">展开规则 · 内联到配置</option>
+                  <option value="false">保留远程规则 · Rule Provider</option>
+                </select>
+                <span class="field-help"
+                  >展开后由后端读取规则集并写入配置；保留远程规则时由客户端更新规则集。GEOSITE / GEOIP
+                  条目仍由客户端处理。</span
+                >
+                <span v-if="options.list === 'true' || options.list === true" class="field-help"
+                  >当前仅输出节点，不包含规则或策略组。需要完整配置时，请将高级参数“仅输出节点”设为关闭。</span
+                >
+              </label>
+              <label v-if="target === 'surge'" class="spaced"
+                >Surge 版本<select v-model="ver">
+                  <option value="">后端默认 · {{ PROFILES[profile].surgeDefault }}</option>
+                  <option v-for="v in [2, 3, 4, 5]" :key="v" :value="String(v)">Surge {{ v }}</option>
+                </select></label
+              >
+              <p class="engine-note"><span>ⓘ</span>{{ description }}</p>
+            </section>
+          </div>
+
+          <div class="glass-scene" v-liquid-glass="theme">
+            <div class="glass-art" data-glass-content aria-hidden="true"></div>
+            <section class="panel advanced-panel" data-glass-surface>
+              <button
+                class="accordion-heading"
+                @click="advanced = !advanced"
+                :aria-expanded="advanced"
+                aria-controls="advanced-options"
+              >
+                <h2>
+                  <span class="step">03</span>高级参数<span class="count" v-if="overrideCount">{{
+                    overrideCount
+                  }}</span>
+                </h2>
+                <span>{{ advanced ? '收起 −' : '展开 ＋' }}</span>
+              </button>
+              <p class="advanced-caption">留空或“跟随后端”保留引擎默认行为。</p>
+              <div v-if="advanced" id="advanced-options">
+                <div class="param-tabs" role="tablist" aria-label="参数分类">
+                  <button
+                    v-for="s in sections"
+                    :key="s.key"
+                    role="tab"
+                    :aria-selected="activeSection === s.key"
+                    :class="{ active: activeSection === s.key }"
+                    @click="activeSection = s.key"
+                  >
+                    {{ s.label }}
+                  </button>
+                </div>
+                <div class="options-grid">
+                  <OptionField v-for="f in currentFields" :key="f.key" :field="f" v-model="options[f.key]" />
+                </div>
+                <label v-if="activeSection === 'provider' && options.provider_headers" class="spaced"
+                  >请求头值 · JSON<textarea
+                    v-model="headerValues"
+                    rows="3"
+                    spellcheck="false"
+                    autocomplete="off"
+                    placeholder='{"X-Subscription-Key":"你的值"}'
+                  ></textarea
+                  ><span class="field-help"
+                    >值保留在当前页面内存中。下载需要后端 CORS
+                    允许这些请求头；复制链接和短链无法传递请求头值。</span
+                  ></label
+                >
+                <p v-if="profile === 'extended' && activeSection === 'rules'" class="engine-note">
+                  Extended 的 Clash 始终使用新字段名；自定义分组与规则请写入远程配置。classic 在此后端只控制
+                  Clash。
+                </p>
+                <button class="text-button reset-options" @click="resetOptions">恢复全部默认参数</button>
+              </div>
+            </section>
+          </div>
         </div>
 
         <aside class="result-column">
-          <section class="panel result-panel">
-            <div class="panel-heading">
-              <h2>转换结果</h2>
-              <span class="format-tag">{{ chosenTarget?.format }}</span>
-            </div>
-            <div class="result-summary">
-              <span class="result-mark">⇄</span>
-              <div>
-                <strong>{{ chosenTarget?.label }}</strong
-                ><span>{{ PROFILES[profile].short }} · {{ sourceCount }} 条来源</span>
+          <div class="glass-scene" v-liquid-glass="theme">
+            <div class="glass-art result-art" data-glass-content aria-hidden="true"></div>
+            <section class="panel result-panel" data-glass-surface>
+              <div class="panel-heading">
+                <h2>转换结果</h2>
+                <span class="format-tag">{{ chosenTarget?.format }}</span>
               </div>
-            </div>
-            <label for="result-link">订阅链接 <span class="muted">实时生成</span></label>
-            <textarea
-              id="result-link"
-              class="result-url"
-              :value="generated.url"
-              rows="5"
-              readonly
-              placeholder="添加订阅来源后，转换链接会出现在这里。"
-            ></textarea>
-            <div v-if="error || generated.error" class="error" role="alert">
-              {{ error || generated.error }}
-            </div>
-            <p v-if="needsHeaders" class="field-help">已配置请求头，请使用预览或下载配置。</p>
-            <button
-              class="primary main-action"
-              :disabled="!!busy || !generated.url || needsHeaders"
-              @click="copyLink"
-            >
-              {{ busy === 'copy' ? '复制中…' : '复制转换链接' }} <span>↗</span>
-            </button>
-            <div class="result-actions">
-              <button class="secondary" :disabled="!!busy || !generated.url || needsHeaders" @click="shorten">
-                {{ busy === 'short' ? '生成中…' : '生成短链' }}</button
-              ><button
-                class="secondary"
-                :disabled="!!busy || !generated.url"
-                @click="requestOutput(false, true)"
+              <div class="result-summary">
+                <span class="result-mark">⇄</span>
+                <div>
+                  <strong>{{ chosenTarget?.label }}</strong
+                  ><span>{{ PROFILES[profile].short }} · {{ sourceCount }} 条来源</span>
+                </div>
+              </div>
+              <label for="result-link">订阅链接 <span class="muted">实时生成</span></label>
+              <textarea
+                id="result-link"
+                class="result-url"
+                :value="generated.url"
+                rows="5"
+                readonly
+                placeholder="添加订阅来源后，转换链接会出现在这里。"
+              ></textarea>
+              <div v-if="error || generated.error" class="error" role="alert">
+                {{ error || generated.error }}
+              </div>
+              <p v-if="needsHeaders" class="field-help">已配置请求头，请使用预览或下载配置。</p>
+              <button
+                class="primary main-action"
+                :disabled="!!busy || !generated.url || needsHeaders"
+                @click="copyLink"
               >
-                {{ busy === 'download' ? '下载中…' : '下载配置 ↓' }}
+                {{ busy === 'copy' ? '复制中…' : '复制转换链接' }} <span>↗</span>
               </button>
-            </div>
-            <div v-if="shortUrl" class="short-result">
-              <span>短链 · 30 天有效</span>
-              <div>
-                <input :value="shortUrl" readonly aria-label="生成的短链接" /><button
-                  class="text-button"
-                  @click="
-                    run('copy-short', async () => {
-                      await copyText(shortUrl);
-                      notify('短链已复制');
-                    })
-                  "
+              <div class="result-actions">
+                <button
+                  class="secondary"
+                  :disabled="!!busy || !generated.url || needsHeaders"
+                  @click="shorten"
                 >
-                  复制
+                  {{ busy === 'short' ? '生成中…' : '生成短链' }}</button
+                ><button
+                  class="secondary"
+                  :disabled="!!busy || !generated.url"
+                  @click="requestOutput(false, true)"
+                >
+                  {{ busy === 'download' ? '下载中…' : '下载配置 ↓' }}
                 </button>
               </div>
-            </div>
-            <div class="result-tools">
-              <button class="text-button" :disabled="!!busy || !generated.url" @click="requestOutput()">
-                {{ busy === 'preview' ? '读取中…' : '预览配置' }}</button
-              ><button
-                v-if="profile === 'extended'"
-                class="text-button"
-                :disabled="!!busy || !generated.url"
-                @click="requestOutput(true)"
-              >
-                {{ busy === 'diagnose' ? '诊断中…' : '转换诊断' }}
-              </button>
-            </div>
-            <p class="result-footnote">面板不保存订阅和密钥。短链服务会保存生成链接，用于后续跳转。</p>
-          </section>
+              <div v-if="shortUrl" class="short-result">
+                <span>短链 · 30 天有效</span>
+                <div>
+                  <input :value="shortUrl" readonly aria-label="生成的短链接" /><button
+                    class="text-button"
+                    @click="
+                      run('copy-short', async () => {
+                        await copyText(shortUrl);
+                        notify('短链已复制');
+                      })
+                    "
+                  >
+                    复制
+                  </button>
+                </div>
+              </div>
+              <div class="result-tools">
+                <button class="text-button" :disabled="!!busy || !generated.url" @click="requestOutput()">
+                  {{ busy === 'preview' ? '读取中…' : '预览配置' }}</button
+                ><button
+                  v-if="profile === 'extended'"
+                  class="text-button"
+                  :disabled="!!busy || !generated.url"
+                  @click="requestOutput(true)"
+                >
+                  {{ busy === 'diagnose' ? '诊断中…' : '转换诊断' }}
+                </button>
+              </div>
+              <p class="result-footnote">面板不保存订阅和密钥。短链服务会保存生成链接，用于后续跳转。</p>
+            </section>
+          </div>
           <section class="context-card">
             <span class="eyebrow">当前能力</span
             ><strong>{{ profile === 'extended' ? '为远程订阅而设计' : '保留完整转换控制' }}</strong>
@@ -641,13 +691,16 @@ onMounted(() => checkVersions(true));
           </section>
         </aside>
       </div>
-      <section v-if="currentOutput" class="panel output-panel">
-        <div class="panel-heading">
-          <h2>{{ currentOutput.diagnostic ? '转换诊断 · JSON' : '配置预览' }}</h2>
-          <button class="text-button" @click="output = null">关闭 ×</button>
-        </div>
-        <pre>{{ currentOutput.text }}</pre>
-      </section>
+      <div v-if="currentOutput" class="glass-scene output-stage" v-liquid-glass="theme">
+        <div class="glass-art" data-glass-content aria-hidden="true"></div>
+        <section class="panel output-panel" data-glass-surface>
+          <div class="panel-heading">
+            <h2>{{ currentOutput.diagnostic ? '转换诊断 · JSON' : '配置预览' }}</h2>
+            <button class="text-button" @click="output = null">关闭 ×</button>
+          </div>
+          <pre>{{ currentOutput.text }}</pre>
+        </section>
+      </div>
     </main>
     <footer><span>Subweb Next · 纯前端订阅工作台</span><span>适配 Standard & Extended</span></footer>
     <div v-if="toast" class="toast" role="status">✓ {{ toast }}</div>

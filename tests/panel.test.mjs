@@ -262,6 +262,23 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     await settle();
     assert.equal(manualRoot.querySelector('.engine-card.local.selected'), null);
     assert.equal(manualRoot.querySelectorAll('#target option').length, 16);
+    app.unmount();
+
+    // Domain-hosted panels must neither display nor probe a third, same-origin backend.
+    deferLocalVersion = false;
+    localVersion = 'subconverter v0.9.0';
+    window.happyDOM.setURL('https://sub.miaoceo.com/');
+    requests.length = 0;
+    const domainRoot = window.document.createElement('div');
+    window.document.body.append(domainRoot);
+    app = createApp(Panel);
+    app.mount(domainRoot);
+    await settle();
+    assert.equal(domainRoot.querySelector('.engine-card.local'), null);
+    assert.equal(domainRoot.querySelector('.engine-grid.has-local'), null);
+    assert.equal(domainRoot.querySelectorAll('.engine-card').length, 2);
+    assert.equal(requests.length, 2, 'only the configured public backends are checked');
+    assert.ok(domainRoot.querySelector('.engine-card.selected strong').textContent.includes('Extended'));
   } finally {
     if (app) app.unmount();
     await window.happyDOM.close();
