@@ -5,6 +5,7 @@ import { PROFILES, SECTIONS, cleanOptions, parametersFor, targetsFor } from './l
 import { buildConversion, sourceLines } from './lib/converter.js';
 import { copyText, createShortLink, fetchText, readVersion } from './lib/network.js';
 import { templatesFor, templateGroups } from './lib/presets.js';
+import { currentSiteBackend, versionProfile } from './lib/local-backend.js';
 
 const runtime = window.config || {};
 const backends = reactive(
@@ -19,8 +20,12 @@ if (!backends.length)
     { id: '0', value: 'https://api.miaoceo.com', text: 'SubConverter-Extended', profile: 'extended' },
     { id: '1', value: 'https://sub.miaoceo.com', text: 'subconverter', profile: 'standard' },
   );
+const currentSite = runtime.localBackend === false ? null : currentSiteBackend(window.location);
+if (currentSite) backends.push(currentSite);
 const selected = ref(backends[0].id);
-const customProfile = ref('extended');
+const userSelectedBackend = ref(false);
+const localBackend = computed(() => backends.find((b) => b.local));
+const customProfile = ref('standard');
 const customEndpoint = ref('');
 const backend = computed(() => backends.find((b) => b.id === selected.value));
 const profile = computed(() => (selected.value === 'custom' ? customProfile.value : backend.value.profile));
@@ -192,15 +197,37 @@ async function requestOutput(diagnostic = false, download = false) {
     }
   });
 }
-async function checkVersions() {
+function selectBackend(id) {
+  userSelectedBackend.value = true;
+  selected.value = id;
+}
+async function checkVersions(autoSelectLocal = false) {
   const list = selected.value === 'custom' ? [{ id: 'custom', value: customEndpoint.value }] : backends;
   await Promise.allSettled(
     list.map(async (b) => {
       versions[b.id] = { loading: true, endpoint: b.value };
       try {
         const text = await readVersion(b.value);
-        if (versions[b.id]?.endpoint === b.value) versions[b.id] = { text, endpoint: b.value };
+        if (versions[b.id]?.endpoint === b.value && (b.id !== 'custom' || customEndpoint.value === b.value)) {
+          versions[b.id] = { text, endpoint: b.value };
+          const detectedProfile = versionProfile(text);
+          if (b.id === 'custom') customProfile.value = detectedProfile || 'standard';
+          if (b.local) {
+            if (detectedProfile) b.profile = detectedProfile;
+            if (
+              detectedProfile &&
+              autoSelectLocal &&
+              !userSelectedBackend.value &&
+              !sources.value.trim() &&
+              target.value === 'clash' &&
+              !configChoice.value &&
+              !overrideCount.value
+            )
+              selected.value = b.id;
+          }
+        }
       } catch (e) {
+        if (b.id === 'custom' && customEndpoint.value !== b.value) return;
         versions[b.id] = {
           error: e.message === 'Failed to fetch' ? '无法读取 · 检查 CORS / 验证' : e.message,
           endpoint: b.value,
@@ -245,6 +272,10 @@ watch([profile, target], () => {
   providerOpen.value = false;
   if (!fields.value.some((f) => f.key === 'provider_headers')) headerValues.value = '';
 });
+watch(customEndpoint, () => {
+  customProfile.value = 'standard';
+  delete versions.custom;
+});
 watch(
   state,
   () => {
@@ -267,7 +298,7 @@ watch(
   },
   { immediate: true },
 );
-onMounted(checkVersions);
+onMounted(() => checkVersions(true));
 </script>
 
 <template>
@@ -302,28 +333,32 @@ onMounted(checkVersions);
           <h2 id="engine-title">转换引擎</h2>
           <button
             class="text-button"
-            @click="checkVersions"
+            @click="checkVersions()"
             :disabled="Object.values(versions).some((v) => v.loading)"
           >
             ↻ 读取在线版本
           </button>
         </div>
-        <div class="engine-grid">
+        <div class="engine-grid" :class="{ 'has-local': localBackend }">
           <button
             v-for="b in backends"
             :key="b.id"
             type="button"
             class="engine-card"
-            :class="{ selected: selected === b.id }"
+            :class="{ selected: selected === b.id, local: b.local }"
             :aria-pressed="selected === b.id"
-            @click="selected = b.id"
+            @click="selectBackend(b.id)"
           >
             <div class="engine-top">
-              <span class="engine-glyph" :class="b.profile">{{ b.profile === 'extended' ? '✦' : '⇄' }}</span
+              <span class="engine-glyph" :class="b.profile">{{
+                b.local ? '⌂' : b.profile === 'extended' ? '✦' : '⇄'
+              }}</span
               ><span class="selection-dot"></span>
             </div>
             <strong>{{ b.text }}</strong
-            ><span class="engine-desc">{{ PROFILES[b.profile]?.description }}</span>
+            ><span class="engine-desc">{{
+              b.local ? '自动沿用当前访问地址' : PROFILES[b.profile]?.description
+            }}</span>
             <div class="engine-bottom">
               <code>{{ b.value.replace(/^https?:\/\//, '') }}</code
               ><span class="version-pill">{{
@@ -338,20 +373,16 @@ onMounted(checkVersions);
         <details class="custom-backend">
           <summary @click="error = ''">使用自定义后端</summary>
           <div class="custom-grid">
-            <label
-              >后端类型<select v-model="customProfile">
-                <option value="extended">SubConverter-Extended</option>
-                <option value="standard">subconverter</option>
-              </select></label
-            ><label
+            <label for="custom-endpoint"
               >API 根地址<input
+                id="custom-endpoint"
                 v-model="customEndpoint"
                 placeholder="https://example.com"
                 autocomplete="off" /></label
             ><button
               class="secondary"
               @click="
-                selected = 'custom';
+                selectBackend('custom');
                 checkVersions();
               "
             >
@@ -359,7 +390,11 @@ onMounted(checkVersions);
             </button>
           </div>
           <p v-if="selected === 'custom'" class="field-help">
-            当前自定义后端：{{ versions.custom?.text || versions.custom?.error || '读取中…' }}
+            当前自定义后端：{{
+              versions.custom?.text ||
+              versions.custom?.error ||
+              (versions.custom?.loading ? '读取中…' : '暂按普通版参数')
+            }}
           </p>
         </details>
       </section>

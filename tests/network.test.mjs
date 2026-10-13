@@ -42,4 +42,6 @@ test('version reader handles HTML identity pages without rendering backend HTML'
     async () => new Response('<html>Just a moment cf-chl-test</html>'),
   );
   await assert.rejects(readVersion('https://api.miaoceo.com'), /验证/);
+  globalThis.fetch.mock.mockImplementation(async () => new Response('Welcome v1.0.0'));
+  await assert.rejects(readVersion('https://api.miaoceo.com'), /未识别/);
 });

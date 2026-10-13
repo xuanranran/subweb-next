@@ -37,7 +37,7 @@ export async function readVersion(backend) {
     .replace(/&nbsp;/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  if (!/subconverter|\bv\d+\.\d+/i.test(plain)) throw new Error('未识别的版本响应');
+  if (!/subconverter/i.test(plain)) throw new Error('未识别的版本响应');
   const version = plain.match(/\bv\d+\.\d+(?:\.\d+)?(?:-[\w.-]+)?/i)?.[0];
   const build = plain.match(/Build\s+(?:构建\s+)?([a-f\d]{7,40})\b/i)?.[1];
   if (version)

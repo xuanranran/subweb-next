@@ -10,7 +10,7 @@ import { parse, compileScript } from '@vue/compiler-sfc';
 test('the actual Vue panel switches profiles, resets incompatible fields and invalidates async results', async (t) => {
   const testRoot = path.dirname(fileURLToPath(import.meta.url));
   const scratch = await mkdtemp(path.join(testRoot, '.ui-'));
-  const window = new Window({ url: 'http://localhost:5173' });
+  const window = new Window({ url: 'http://192.168.2.190:25500/' });
   for (const key of [
     'window',
     'document',
@@ -37,9 +37,28 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     copied.push(text);
   };
   let pendingShort;
+  let localVersion = null;
+  let pendingLocalVersion;
+  let deferLocalVersion = false;
+  let deferCustomVersion = false;
+  let pendingCustomVersion;
   const requests = [];
   t.mock.method(globalThis, 'fetch', async (url, options = {}) => {
     requests.push({ url: String(url), options });
+    if (String(url) === window.location.origin + '/version') {
+      if (deferLocalVersion)
+        return new Promise((resolve) => {
+          pendingLocalVersion = resolve;
+        });
+      return new Response(localVersion || '<html><body>Subweb Next</body></html>');
+    }
+    if (String(url) === 'https://custom.example.com/version') {
+      if (deferCustomVersion)
+        return new Promise((resolve) => {
+          pendingCustomVersion = resolve;
+        });
+      return new Response('SubConverter-Extended v1.9.14');
+    }
     if (String(url).endsWith('/version')) return new Response('SubConverter v0.9.0');
     if (String(url).endsWith('/short'))
       return new Promise((resolve) => {
@@ -85,9 +104,9 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     };
     await settle();
     assert.equal(root.querySelectorAll('#target option').length, 22);
-    assert.equal(requests.length, 2, 'only version requests happen automatically');
+    assert.equal(requests.length, 3, 'only version requests happen automatically');
     await setInput('#sources', 'https://example.com/sub?a=1&token=a+b');
-    assert.equal(requests.length, 2, 'editing subscriptions stays local');
+    assert.equal(requests.length, 3, 'editing subscriptions stays local');
     assert.equal(
       new URL(root.querySelector('#result-link').value).searchParams.get('url'),
       'https://example.com/sub?a=1&token=a+b',
@@ -111,7 +130,7 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     assert.equal(new URL(root.querySelector('#result-link').value).searchParams.get('expand'), 'true');
     await setInput('#rule-expansion', 'false');
     assert.equal(new URL(root.querySelector('#result-link').value).searchParams.get('expand'), 'false');
-    assert.equal(requests.length, 2, 'template selection and expansion stay local');
+    assert.equal(requests.length, 3, 'template selection and expansion stay local');
 
     await setInput('#target', 'stash');
     assert.equal(root.querySelector('#config').value, '');
@@ -175,6 +194,74 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     await setInput('#target', 'singbox');
     assert.equal(root.querySelector('.short-result'), null);
     assert.equal(root.querySelectorAll('[role="alert"]').length, 0);
+    engine('本地后端').click();
+    await settle();
+    assert.equal(new URL(root.querySelector('#result-link').value).origin, 'http://192.168.2.190:25500');
+    assert.equal(root.querySelectorAll('#target option').length, 16);
+    localVersion = 'SubConverter-Extended v1.9.14';
+    button('读取在线版本').click();
+    await settle();
+    assert.equal(root.querySelectorAll('#target option').length, 22);
+    localVersion = 'subconverter v0.9.0';
+    button('读取在线版本').click();
+    await settle();
+    assert.equal(root.querySelectorAll('#target option').length, 16);
+    assert.equal(root.querySelector('#local-profile'), null);
+    assert.equal(root.querySelector('.custom-backend select'), null);
+    await setInput('#custom-endpoint', 'https://custom.example.com');
+    button('使用并读取版本').click();
+    await settle();
+    assert.equal(root.querySelectorAll('#target option').length, 22);
+    await setInput('#target', 'clash');
+    assert.equal(root.querySelectorAll('#config optgroup option').length, 8);
+    assert.equal(new URL(root.querySelector('#result-link').value).origin, 'https://custom.example.com');
+    await setInput('#custom-endpoint', 'http://127.0.0.1:25500');
+    assert.equal(
+      root.querySelectorAll('#target option').length,
+      16,
+      'new address resets old detected capabilities',
+    );
+    assert.equal(root.querySelectorAll('#config optgroup').length, 0);
+    button('使用并读取版本').click();
+    await settle();
+    assert.equal(new URL(root.querySelector('#result-link').value).origin, 'http://127.0.0.1:25500');
+    deferCustomVersion = true;
+    await setInput('#custom-endpoint', 'https://custom.example.com');
+    button('使用并读取版本').click();
+    await settle();
+    await setInput('#custom-endpoint', 'http://127.0.0.1:25500');
+    pendingCustomVersion(new Response('SubConverter-Extended v1.9.14'));
+    await settle();
+    assert.equal(root.querySelectorAll('#target option').length, 16, 'stale version response is ignored');
+    app.unmount();
+
+    // With a real /version response, an untouched page defaults to the current backend.
+    localVersion = 'SubConverter-Extended v1.9.14';
+    const autoRoot = window.document.createElement('div');
+    window.document.body.append(autoRoot);
+    app = createApp(Panel);
+    app.mount(autoRoot);
+    await settle();
+    assert.ok(autoRoot.querySelector('.engine-card.local.selected'));
+    assert.equal(autoRoot.querySelectorAll('#target option').length, 22);
+    assert.equal(autoRoot.querySelector('#local-profile'), null);
+    app.unmount();
+
+    // A late version response cannot override a backend the user already chose.
+    deferLocalVersion = true;
+    const manualRoot = window.document.createElement('div');
+    window.document.body.append(manualRoot);
+    app = createApp(Panel);
+    app.mount(manualRoot);
+    await settle();
+    [...manualRoot.querySelectorAll('.engine-card')]
+      .find((card) => card.querySelector('strong').textContent === 'subconverter')
+      .click();
+    await settle();
+    pendingLocalVersion(new Response('SubConverter-Extended v1.9.14'));
+    await settle();
+    assert.equal(manualRoot.querySelector('.engine-card.local.selected'), null);
+    assert.equal(manualRoot.querySelectorAll('#target option').length, 16);
   } finally {
     if (app) app.unmount();
     await window.happyDOM.close();

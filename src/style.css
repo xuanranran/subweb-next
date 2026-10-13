@@ -262,6 +262,9 @@ label > select {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
+.engine-grid.has-local {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 .engine-card {
   text-align: left;
   padding: 20px 22px;
@@ -356,7 +359,7 @@ summary {
 }
 .custom-grid {
   display: grid;
-  grid-template-columns: 1fr 2fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: end;
   margin: 14px 0;
@@ -777,6 +780,12 @@ footer {
   }
 }
 @media (max-width: 900px) {
+  .engine-grid.has-local {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .engine-card.local {
+    grid-column: 1 / -1;
+  }
   .shell {
     padding: 0 24px;
   }
@@ -798,13 +807,6 @@ footer {
   }
   .engine-card {
     padding: 18px;
-  }
-  .custom-grid {
-    grid-template-columns: 1fr 1.5fr;
-  }
-  .custom-grid button {
-    grid-column: 1/-1;
-    justify-self: end;
   }
   .source-footer {
     align-items: flex-start;
