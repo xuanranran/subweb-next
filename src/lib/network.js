@@ -78,9 +78,19 @@ export async function copyText(text) {
   const area = document.createElement('textarea');
   area.value = text;
   area.style.cssText = 'position:fixed;left:-9999px;top:0';
-  document.body.append(area);
-  area.select();
-  const ok = document.execCommand('copy');
-  area.remove();
+  const previousFocus = document.activeElement;
+  // The page outside a native modal is inert, so HTTP clipboard fallback must live inside the dialog.
+  const host = previousFocus?.closest('dialog[open]') || document.querySelector('dialog[open]') || document.body;
+  host.append(area);
+  let ok = false;
+  try {
+    area.focus();
+    area.select();
+    ok = document.execCommand?.('copy') === true;
+  } catch { /* surface a readable error after removing the temporary control */ }
+  finally {
+    area.remove();
+    if (previousFocus?.isConnected) previousFocus.focus();
+  }
   if (!ok) throw new Error('复制失败，请手动选择链接复制。');
 }

@@ -189,6 +189,29 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     assert.ok(dialog, 'configuration opens in a native modal dialog');
     assert.equal(window.document.body.style.overflow, 'hidden');
     assert.match(root.querySelector('.editor-fallback')?.value || root.querySelector('.cm-content')?.textContent || '', /synthetic/);
+    const clipboardWrite = window.navigator.clipboard.writeText;
+    const execCommand = window.document.execCommand;
+    let modalCopy = false;
+    try {
+      window.navigator.clipboard.writeText = async () => { throw new Error('HTTP clipboard unavailable'); };
+      window.document.execCommand = (command) => {
+        assert.equal(command, 'copy');
+        assert.equal(window.document.activeElement.parentElement, dialog);
+        assert.equal(window.document.activeElement.value, 'proxies:\n - name: synthetic');
+        modalCopy = true;
+        return true;
+      };
+      const copyConfig = button('复制配置');
+      copyConfig.focus();
+      copyConfig.click();
+      await settle();
+      assert.ok(modalCopy, 'HTTP LAN clipboard fallback stays inside the modal');
+      assert.equal(dialog.querySelector(':scope > textarea'), null);
+      assert.equal(window.document.activeElement, copyConfig);
+    } finally {
+      window.navigator.clipboard.writeText = clipboardWrite;
+      window.document.execCommand = execCommand;
+    }
     button('最大化').click();
     await settle();
     assert.ok(dialog.classList.contains('maximized'));
