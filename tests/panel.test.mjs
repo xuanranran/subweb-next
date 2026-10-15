@@ -125,6 +125,16 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     const engine = (text) =>
       [...root.querySelectorAll('.engine-card')].find((b) => b.querySelector('strong').textContent === text);
     const setInput = async (selector, value) => {
+      if (selector === '#theme-mode') {
+        root.querySelector('.theme-trigger').click();
+        await settle();
+        const option = root.querySelector(`.theme-segments [data-mode="${value}"]`);
+        assert.ok(option);
+        option.click();
+        await settle();
+        assert.equal(root.querySelector('.theme-panel'), null, 'choosing a mode dismisses the compact panel');
+        return;
+      }
       const input = root.querySelector(selector);
       assert.ok(input, selector);
       input.value = value;
@@ -136,7 +146,22 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     await settle();
     assert.equal(root.querySelectorAll('#target option').length, 22);
     assert.equal(requests.length, 3, 'only version requests happen automatically');
-    assert.equal(root.querySelector('#theme-mode').value, 'auto');
+    const themeTrigger = root.querySelector('.theme-trigger');
+    assert.match(themeTrigger.getAttribute('aria-label'), /当前自动/);
+    assert.equal(root.querySelector('select#theme-mode'), null, 'the header contains only a compact palette icon');
+    themeTrigger.click();
+    await settle();
+    assert.equal(themeTrigger.getAttribute('aria-expanded'), 'true');
+    assert.equal(root.querySelector('.theme-segments [data-mode="auto"]').getAttribute('aria-pressed'), 'true');
+    themeTrigger.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await settle();
+    assert.equal(root.querySelector('.theme-panel'), null);
+    assert.equal(window.document.activeElement, themeTrigger);
+    themeTrigger.click();
+    await settle();
+    root.querySelector('#sources').dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true }));
+    await settle();
+    assert.equal(root.querySelector('.theme-panel'), null, 'clicking outside closes the theme panel');
     assert.equal(window.document.documentElement.dataset.theme, 'light');
     changeSystemTheme(true);
     await settle();
@@ -381,11 +406,11 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     app = createApp(Panel);
     app.mount(autoRoot);
     await settle();
-    assert.equal(autoRoot.querySelector('#theme-mode').value, 'light', 'explicit theme selection survives remounting');
+    assert.match(autoRoot.querySelector('.theme-trigger').getAttribute('aria-label'), /当前亮色/, 'explicit theme selection survives remounting');
     assert.equal(window.document.documentElement.dataset.theme, 'light');
-    const autoTheme = autoRoot.querySelector('#theme-mode');
-    autoTheme.value = 'auto';
-    autoTheme.dispatchEvent(new window.Event('change', { bubbles: true }));
+    autoRoot.querySelector('.theme-trigger').click();
+    await settle();
+    autoRoot.querySelector('.theme-segments [data-mode="auto"]').click();
     await settle();
     assert.equal(window.document.documentElement.dataset.theme, 'dark');
     assert.ok(autoRoot.querySelector('.engine-card.local.selected'));

@@ -210,9 +210,18 @@ label > textarea {
   gap: 18px;
   font-size: 11px;
 }
-.theme-control { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text); }
-.theme-control > svg { width: 17px; height: 17px; flex-shrink: 0; }
-.theme-control select { width: 60px; min-height: 28px; padding: 0; border: 0; border-radius: 4px; background: transparent; font-size: 11px; cursor: pointer; }
+.theme-picker { position: relative; }
+.theme-trigger { border-radius: 8px; }
+:root[data-theme='dark'] .theme-trigger { background: #080b10; }
+.theme-panel { position: absolute; right: 0; top: calc(100% + 10px); z-index: 40; width: 242px; max-width: calc(100vw - 32px); padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); box-shadow: 0 12px 32px #0003; }
+.theme-panel-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.theme-panel-heading strong { font-size: 12px; }
+.theme-panel-heading button { padding: 0 4px; font-size: 18px; line-height: 1.2; color: var(--muted); }
+.theme-segments { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 3px; border-radius: 8px; background: var(--bg); }
+.theme-segments button { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; padding: 5px; border: 0; border-radius: 6px; font-size: 11px; background: transparent; color: var(--muted); }
+.theme-segments button svg { width: 14px; height: 14px; }
+.theme-segments button:hover { color: var(--text); background: var(--tint); }
+.theme-segments button[aria-pressed='true'] { color: #fff; background: #3865ea; }
 .top-actions a {
   color: var(--muted);
 }

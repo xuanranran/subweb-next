@@ -45,6 +45,26 @@ const headerValues = ref('');
 const advanced = ref(false);
 const activeSection = ref('output');
 const themePreference = ref('auto');
+const themePicker = ref(null);
+const themePanelOpen = ref(false);
+const themeModes = [{ value: 'light', label: '亮色' }, { value: 'dark', label: '暗色' }, { value: 'auto', label: '自动' }];
+function closeThemePanel(restoreFocus = false) {
+  themePanelOpen.value = false;
+  if (restoreFocus) themePicker.value?.querySelector('.theme-trigger')?.focus();
+}
+function chooseTheme(value) {
+  themePreference.value = value;
+  closeThemePanel(true);
+}
+function themeOutside(event) {
+  if (themePanelOpen.value && !themePicker.value?.contains(event.target)) closeThemePanel();
+}
+function themeKeydown(event) {
+  if (event.key === 'Escape' && themePanelOpen.value) {
+    event.preventDefault();
+    closeThemePanel(true);
+  }
+}
 const themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
 const systemDark = ref(themeMedia.matches);
 const theme = computed(() => themePreference.value === 'auto' ? (systemDark.value ? 'dark' : 'light') : themePreference.value);
@@ -461,11 +481,15 @@ onMounted(() => {
   checkVersions(true);
   window.addEventListener('storage', historyChanged);
   themeMedia.addEventListener('change', systemThemeChanged);
+  document.addEventListener('pointerdown', themeOutside);
+  document.addEventListener('keydown', themeKeydown);
 });
 onBeforeUnmount(() => {
   clearValidation();
   window.removeEventListener('storage', historyChanged);
   themeMedia.removeEventListener('change', systemThemeChanged);
+  document.removeEventListener('pointerdown', themeOutside);
+  document.removeEventListener('keydown', themeKeydown);
 });
 </script>
 
@@ -488,34 +512,27 @@ onBeforeUnmount(() => {
         <div class="top-actions">
           <a :href="PROFILES[profile].source" target="_blank" rel="noreferrer">后端源码 ↗</a
           >
-          <label class="theme-control" for="theme-mode">
-            <svg v-if="themePreference === 'auto'" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <rect x="3" y="4" width="18" height="13" rx="2" stroke="currentColor" stroke-width="1.6" />
-              <path d="M8 21h8m-4-4v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-            </svg>
-            <svg v-else-if="theme === 'dark'" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M20 14.2A8 8 0 0 1 9.8 4a8.2 8.2 0 1 0 10.2 10.2Z"
-                stroke="currentColor"
-                stroke-width="1.6"
-                stroke-linejoin="round"
-              />
-            </svg>
-            <svg v-else viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.6" />
-              <path
-                d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"
-                stroke="currentColor"
-                stroke-width="1.6"
-                stroke-linecap="round"
-              />
-            </svg>
-            <select id="theme-mode" v-model="themePreference" aria-label="主题模式" title="自动模式跟随浏览器的明暗偏好">
-              <option value="auto">自动</option>
-              <option value="light">亮色</option>
-              <option value="dark">暗色</option>
-            </select>
-          </label>
+          <div ref="themePicker" class="theme-picker" @focusout="!$event.currentTarget.contains($event.relatedTarget) && closeThemePanel()">
+            <button type="button" class="icon-button theme-trigger" :aria-label="'主题设置，当前' + themeModes.find(mode => mode.value === themePreference).label" title="主题设置" :aria-expanded="themePanelOpen" aria-controls="theme-panel" @click="themePanelOpen = !themePanelOpen">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 3a9 9 0 1 0 0 18h1.2a2.1 2.1 0 0 0 1.5-3.6 1.6 1.6 0 0 1 1.1-2.7h1.7A3.5 3.5 0 0 0 21 11.2 8.8 8.8 0 0 0 12 3Z" />
+                <circle cx="7.5" cy="10" r=".8" /><circle cx="10" cy="6.8" r=".8" /><circle cx="14" cy="6.8" r=".8" /><circle cx="17" cy="10" r=".8" />
+              </svg>
+            </button>
+            <div v-if="themePanelOpen" id="theme-panel" class="theme-panel">
+              <div class="theme-panel-heading"><strong>外观</strong><button type="button" class="text-button" aria-label="关闭主题设置" @click="closeThemePanel(true)">×</button></div>
+              <div class="theme-segments" role="group" aria-label="主题模式">
+                <button v-for="mode in themeModes" :key="mode.value" type="button" :data-mode="mode.value" :aria-pressed="themePreference === mode.value" @click="chooseTheme(mode.value)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <template v-if="mode.value === 'light'"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></template>
+                    <path v-else-if="mode.value === 'dark'" d="M20 14.2A8 8 0 0 1 9.8 4a8.2 8.2 0 1 0 10.2 10.2Z" />
+                    <template v-else><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8m-4-4v4" /></template>
+                  </svg>
+                  {{ mode.label }}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </header>
     </div>
