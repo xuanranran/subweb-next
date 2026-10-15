@@ -36,14 +36,19 @@ try {
   assert.match(script.headers.get('content-type'), /javascript/);
   const valid = 'proxies: []\nproxy-groups:\n  - name: Test\n    type: select\n    proxies: [DIRECT]\nrules: ["MATCH,Test"]\n';
   const invalid = valid + 'dns:\n  enable: true\n  nameserver: [1.1.1.1]\n  enhanced-mode: fake-ip\n  fake-ip-filter-mode: rule\n  fake-ip-filter: ["*"]\n';
-  for (const [config, expected] of [[valid, true], [invalid, false]]) {
+  const mirror = valid + 'geox-url:\n  geoip: https://mirror.example/geoip.dat\n  geosite: https://mirror.example/geosite.dat\n';
+  const syntax = 'port: 7890\nport: 7891\n';
+  for (const [config, expected, line] of [[valid, true], [mirror, true], [invalid, false, 12], [syntax, false, 2]]) {
     const response = await fetch(`${url}/validate`, { method: 'POST', headers: {
       'Content-Type': 'application/json', Cookie: cookie, Origin: 'http://panel.example:25550',
     }, body: JSON.stringify({ config }), signal: AbortSignal.timeout(30000) });
     assert.equal(response.status, 200);
     const result = await response.json();
     assert.equal(result.valid, expected, result.output || result.error);
-    if (!expected) assert.match(result.output, /fake-ip-filter|invalid action/);
+    if (!expected) {
+      assert.equal(result.diagnostics[0].line, line);
+      assert.equal(result.diagnostics[0].source, config === syntax ? 'yaml' : 'mihomo');
+    }
   }
   console.log('Read-only Docker runtime and native validation passed:', health.version);
 } catch (error) {

@@ -330,7 +330,8 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     assert.equal(requests.length, before + 1, 'existing preview is reused without re-conversion');
     assert.deepEqual(JSON.parse(requests.at(-1).options.body), { config: 'proxies:\n - name: synthetic' });
     assert.equal(requests.at(-1).options.headers.Authorization, 'Bearer validation-secret');
-    const nativeReport = { engine: 'mihomo', mode: 'config-test', version: 'Mihomo test', valid: false, output: 'invalid action' };
+    const nativeReport = { engine: 'mihomo', mode: 'config-test', version: 'Mihomo test', valid: false, output: 'invalid action',
+      diagnostics: [{ line: 2, column: 3, message: 'invalid action', source: 'mihomo' }] };
     pendingValidation(Response.json(nativeReport));
     await settle();
     assert.match(domainRoot.querySelector('.validation-report.failed').textContent, /invalid action/);
@@ -341,15 +342,21 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     }
     assert.ok(domainRoot.querySelector('.cm-editor'), 'CodeMirror is loaded, not only the textarea fallback');
     const { EditorView } = await import('@codemirror/view');
+    const { diagnosticCount } = await import('@codemirror/lint');
     const codeView = EditorView.findFromDOM(domainRoot.querySelector('.cm-editor'));
+    assert.equal(diagnosticCount(codeView.state), 1);
+    domainRoot.querySelector('.validation-report .diagnostic-location').click();
+    await settle();
+    assert.equal(codeView.state.selection.main.head, codeView.state.doc.line(2).from + 2);
     const editedConfig = 'proxies: []\nrules: ["MATCH,DIRECT"]\n';
     codeView.dispatch({ changes: { from: 0, to: codeView.state.doc.length, insert: editedConfig } });
     await settle();
     assert.equal(domainRoot.querySelector('.validation-report'), null, 'editing invalidates an existing kernel report');
+    assert.equal(diagnosticCount(codeView.state), 0, 'editing clears obsolete source diagnostics');
     domainButton('内核校验').click();
     await settle();
     assert.equal(JSON.parse(requests.at(-1).options.body).config, editedConfig, 'the edited YAML reaches the kernel service');
-    pendingValidation(Response.json({ ...nativeReport, valid: true, output: 'test successful' }));
+    pendingValidation(Response.json({ ...nativeReport, valid: true, output: 'test successful', diagnostics: [] }));
     await settle();
     domainButton('保存到记录').click();
     await settle();

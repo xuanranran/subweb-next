@@ -19,6 +19,8 @@ npm run validator
 
 配置包含 GEOSITE / GEOIP 时，还需要与客户端相符的地理数据库。将专用数据库目录设置为 `MIHOMO_GEODATA_DIR`，其中可含 `geosite.dat`、`geoip.dat`、`geoip.metadb`、`Country.mmdb` 和 `ASN.mmdb`。每次校验只复制这些已知文件到独立临时目录，不改动原始数据库。缺少数据时内核可能尝试下载；下载失败、数据集缺失和超时不等于配置语法错误，要结合返回日志判断。
 
+`geox-url` 自定义镜像地址保持原样，不设置 GitHub / jsDelivr 域名白名单，也不因使用镜像而拒绝配置；由内核按实际需求读取或下载数据。WebSocket 等传输参数中的 `path` 同样保持原样，仅限制 Provider 的本地缓存文件越出任务临时目录。
+
 ## Docker 部署
 
 Dockerfile 从官方 `metacubex/mihomo:Alpha`（大小写敏感）镜像复制 alpha 内核及地理数据库，Node.js 服务单独提供 HTTP API；不需要编译 C++ 或 Go。每次构建加 `--pull` 更新基础镜像，实际 alpha 提交版本会显示在校验结果中。
@@ -57,7 +59,7 @@ Compose 默认仅将端口暴露到宿主机回环地址，并设置只读文件
 
 - `GET /health`：返回内核版本与 `config-test` 模式。配置令牌后该接口也需要鉴权。
 - `POST /validate`：`Content-Type: application/json`，正文只有 `{"config":"完整 YAML 原文"}`；可附 `Authorization: Bearer <令牌>`。
-- 配置校验成功或内核明确拒绝配置均返回 HTTP 200，使用 `valid` 区分结果。响应包括 `engine: "mihomo"`、`mode: "config-test"`、`version`、`output`、`durationMs`。
+- 配置校验成功或内核明确拒绝配置均返回 HTTP 200，使用 `valid` 区分结果。响应包括 `engine: "mihomo"`、`mode: "config-test"`、`version`、`output`、`durationMs`、`diagnostics`。YAML 本身无法解析时返回 `valid: false`、`stage: "yaml"` 和行列诊断，此时不会执行内核。
 - HTTP 400/413/415/422 为请求无效、超限或资源无法随 YAML 提交；401/403 为鉴权/来源错误；429 表示已有任务；503/504 表示内核不可用或校验未完成。前端不会把这些情况显示为通过。
 
 服务一次执行一个任务，原文最多 4 MiB，内核执行上限 20 秒，输出上限 64 KiB。不接收待抓取的订阅 URL、可执行命令或文件名。不支持 `type: file` Provider、外部证书文件或上级/绝对资源路径。完整 YAML 可能包含密钥，请只发往可信服务。临时配置任务结束即删除，不打印请求体；返回日志隐藏常见密钥、链接和临时目录。部署侧也应关闭请求体日志。
@@ -65,6 +67,8 @@ Compose 默认仅将端口暴露到宿主机回环地址，并设置只读文件
 ## 校验范围
 
 能发现内核解析阶段的 DNS 语法、无效节点参数、策略组/规则引用等错误。校验的是**转换后的原始配置**，不包含 Sparkle 等客户端后续的 DNS 接管、覆写、合并和脚本操作。通过 `-t` 不代表端口可绑定、TUN 权限可用、Provider 已全部下载、节点可连通或实际启动一定成功。
+
+错误列表支持点击行列号跳转到编辑器，并以红色波浪线和侧栏标记指出位置。YAML 语法错误使用解析器提供的位置；`dns.fake-ip-filter[0]`、`rules[0]`、`proxy 0`、`proxy group[0]` 等内核字段或数组索引映射到原始 YAML 节点的起始行。内核未提供可定位信息时只展示原始日志，不猜测行号。编辑内容后旧报告及标记同时清除。
 
 仅支持完整的 Clash / Mihomo 与 ClashR YAML；节点列表、Clash Script、Stash 和其他客户端格式不显示入口。不同内核版本和地理数据可能得到不同结果，应尽量与客户端保持一致。
 

@@ -733,6 +733,12 @@ summary {
 .validation-report strong { font-size: 11px; }
 .validation-report p { font-size: 9px; color: var(--muted); overflow-wrap: anywhere; margin-top: 6px; }
 .validation-report pre { font-size: 10px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; margin-top: 10px; }
+.validation-diagnostics, .editor-diagnostics { list-style: none; padding: 0; margin: 10px 0 0; font-size: 11px; }
+.validation-diagnostics li, .editor-diagnostics li { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 0; overflow-wrap: anywhere; }
+.diagnostic-location { color: #cc5656; font-size: 11px; }
+.validation-log { margin-top: 10px; font-size: 10px; }
+.validation-log summary { color: var(--muted); }
+.editor-diagnostics { margin: 0; padding: 6px 14px; border-bottom: 1px solid var(--line); background: var(--panel); max-height: 180px; overflow: auto; flex-shrink: 0; }
 .result-footnote {
   color: var(--muted);
   font-size: 9px;

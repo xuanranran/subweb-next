@@ -59,6 +59,11 @@ const historyState = ref(historyStore.list());
 const historyOpen = ref(false);
 const historyLabels = { copy: '复制链接', short: '生成短链', preview: '查看配置', download: '下载配置', validate: '内核校验', save: '保存编辑' };
 const validation = ref(null);
+const configEditor = ref(null);
+async function jumpToDiagnostic(item) {
+  await nextTick();
+  configEditor.value?.focusLine(item.line, item.column);
+}
 const validatorUrl = ref(runtime.mihomoValidatorUrl || '');
 const validatorToken = ref('');
 const validatorSettings = ref(false);
@@ -826,10 +831,17 @@ onBeforeUnmount(() => { clearValidation(); window.removeEventListener('storage',
                   <p class="field-help">校验会将完整配置发送到此服务，可能包含订阅地址与节点密钥。请使用你信任的服务；HTTPS 页面请配套 HTTPS 校验地址。</p>
                 </details>
                 <section v-if="currentValidation" class="validation-report" :class="{ failed: !currentValidation.valid }" role="status" aria-live="polite">
-                  <strong>{{ currentValidation.valid ? 'Mihomo 配置校验通过' : 'Mihomo 配置校验未通过' }}</strong>
+                  <strong>{{ currentValidation.valid ? 'Mihomo 配置校验通过' : currentValidation.stage === 'yaml' ? 'YAML 语法检查未通过' : 'Mihomo 配置校验未通过' }}</strong>
                   <span v-if="currentValidation.edited" class="small-badge">本地编辑内容</span>
                   <p>{{ currentValidation.version }}</p>
-                  <pre v-if="currentValidation.output">{{ currentValidation.output }}</pre>
+                  <ul v-if="currentValidation.diagnostics?.length" class="validation-diagnostics">
+                    <li v-for="(item, index) in currentValidation.diagnostics" :key="index">
+                      <button v-if="item.line" type="button" class="text-button diagnostic-location" @click="jumpToDiagnostic(item)">第 {{ item.line }} 行<span v-if="item.column">，第 {{ item.column }} 列</span> ↗</button>
+                      <span>{{ item.message }}</span>
+                    </li>
+                  </ul>
+                  <p v-if="!currentValidation.valid && !currentValidation.diagnostics?.some(item => item.line)" class="field-help">内核未返回可定位的字段或行号，请查看日志。</p>
+                  <details v-if="currentValidation.output" class="validation-log"><summary>{{ currentValidation.stage === 'yaml' ? '语法检查详情' : '内核日志' }}</summary><pre>{{ currentValidation.output }}</pre></details>
                 </section>
                 <p class="field-help validation-scope">使用 mihomo -t 检查配置解析；不测试节点连通性、端口占用或客户端 DNS 覆写。</p>
               </div>
@@ -864,7 +876,7 @@ onBeforeUnmount(() => { clearValidation(); window.removeEventListener('storage',
             <button class="text-button" :disabled="currentOutput.text === currentOutput.originalText" @click="editOutput(currentOutput.originalText)">恢复载入内容</button>
           </div>
           <p v-if="!currentOutput.diagnostic" class="field-help editor-note">可直接查看和编辑生成结果。本地修改用于复制、下载及内核校验，不会改变订阅链接或转换后端。</p>
-          <CodeEditor :model-value="currentOutput.text" :language="currentOutput.diagnostic ? 'JSON' : chosenTarget.format" :theme="theme" :read-only="currentOutput.diagnostic" @update:model-value="editOutput" />
+          <CodeEditor ref="configEditor" :model-value="currentOutput.text" :language="currentOutput.diagnostic ? 'JSON' : chosenTarget.format" :theme="theme" :read-only="currentOutput.diagnostic" :diagnostics="currentOutput.diagnostic ? [] : currentValidation?.diagnostics || []" @update:model-value="editOutput" />
         </section>
       </div>
       <details class="conversion-history panel" :open="historyOpen" @toggle="historyOpen = $event.target.open">

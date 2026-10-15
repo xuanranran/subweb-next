@@ -17,11 +17,12 @@ test('request policy rejects external files, unsafe paths, alias bombs and non-c
     'proxy-providers: {x: {type: http, path: ../private.yaml}}',
     'proxy-providers: {x: {type: http, path: "C:\\private.yaml"}}',
     'proxies: [{certificate: /etc/passwd}]',
-    'geox-url: {geosite: "http://127.0.0.1/private"}',
     'a: &a [x,x,x,x,x,x,x,x,x,x]\nb: &b [*a,*a,*a,*a,*a,*a,*a,*a,*a,*a]\nc: [*b,*b,*b,*b,*b,*b,*b,*b,*b,*b]',
   ]) assert.throws(() => inspectConfig(source), undefined, source);
   assert.doesNotThrow(() => inspectConfig(valid));
   assert.doesNotThrow(() => inspectConfig('proxy-providers: {x: {type: http, path: ./providers/x.yaml}}'));
+  assert.doesNotThrow(() => inspectConfig('geox-url: {geosite: "https://mirror.example/geosite.dat"}'));
+  assert.doesNotThrow(() => inspectConfig('proxies: [{name: ws, type: vmess, ws-opts: {path: /websocket}}]'));
 });
 
 test('kernel output redacts credentials, links and temporary directory', () => {
@@ -53,6 +54,13 @@ test('HTTP contract authenticates and checks CORS before accepting exact YAML, w
     assert.equal((await post({ url: 'https://example.com/sub' })).status, 400);
     assert.equal((await post({ config: '- nodes-only' })).status, 400);
     assert.equal((await post({ config: 'x'.repeat(4 * 1024 * 1024 + 1) })).status, 413);
+    const syntax = await post({ config: 'dns:\n  enable: true\n  enable: false\n' });
+    assert.equal(syntax.status, 200);
+    const syntaxReport = await syntax.json();
+    assert.equal(syntaxReport.valid, false);
+    assert.equal(syntaxReport.stage, 'yaml');
+    assert.equal(syntaxReport.diagnostics[0].line, 3);
+    assert.equal(syntaxReport.diagnostics[0].column, 3);
     const pending = post({ config: valid });
     while (!release) await new Promise((resolve) => setImmediate(resolve));
     assert.equal((await post({ config: valid })).status, 429);
@@ -127,11 +135,23 @@ test('real Mihomo accepts valid config and rejects DNS/filter and missing policy
   const success = await testConfig(valid, settings);
   assert.equal(success.valid, true);
   assert.match(success.output, /successful/i);
+  assert.deepEqual(success.diagnostics, []);
+  const withMirror = await testConfig(valid + 'geox-url:\n  geoip: https://mirror.example/geoip.dat\n  geosite: https://mirror.example/geosite.dat\n', settings);
+  assert.equal(withMirror.valid, true, 'custom geodata addresses reach the kernel unchanged');
   const badDNS = await testConfig(valid + 'dns:\n  enable: true\n  nameserver: [1.1.1.1]\n  enhanced-mode: fake-ip\n  fake-ip-filter-mode: rule\n  fake-ip-filter: ["*"]\n', settings);
   assert.equal(badDNS.valid, false);
   assert.match(badDNS.output, /fake-ip-filter|invalid action/i);
+  assert.equal(badDNS.diagnostics[0].line, 12);
+  assert.equal(badDNS.diagnostics[0].field, 'dns.fake-ip-filter[0]');
   const missingPolicy = await testConfig(valid.replace('MATCH,Test', 'MATCH,MissingPolicy'), settings);
   assert.equal(missingPolicy.valid, false);
   assert.match(missingPolicy.output, /MissingPolicy|not found/i);
+  assert.equal(missingPolicy.diagnostics[0].line, 6);
+  const badProxy = await testConfig('proxies:\n - name: Bad\n   type: invalid\nrules: ["MATCH,DIRECT"]\n', settings);
+  assert.equal(badProxy.valid, false);
+  assert.equal(badProxy.diagnostics[0].line, 2);
+  const badGroup = await testConfig('proxy-groups:\n - name: Bad\n   type: select\n   proxies: [Missing]\nrules: ["MATCH,DIRECT"]\n', settings);
+  assert.equal(badGroup.valid, false);
+  assert.equal(badGroup.diagnostics[0].line, 2);
   await assert.rejects(testConfig(valid, { binary: '/nonexistent/mihomo', version }), { status: 503 });
 });

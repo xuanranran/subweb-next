@@ -32,5 +32,11 @@ export async function validateMihomoConfig(service, config, token = '', signal) 
   if (result.engine !== 'mihomo' || result.mode !== 'config-test' || typeof result.valid !== 'boolean' ||
       typeof result.version !== 'string' || typeof result.output !== 'string')
     throw new Error('校验服务响应格式不正确。');
+  result.diagnostics = (Array.isArray(result.diagnostics) ? result.diagnostics : [])
+    .filter((item) => item && typeof item.message === 'string').slice(0, 12)
+    .map((item) => ({ message: item.message, source: item.source === 'yaml' ? 'yaml' : 'mihomo',
+      ...(Number.isInteger(item.line) && item.line > 0 ? { line: item.line,
+        column: Number.isInteger(item.column) && item.column > 0 ? item.column : 1 } : {}),
+    }));
   return result;
 }

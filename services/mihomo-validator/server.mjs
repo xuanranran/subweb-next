@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { timingSafeEqual, randomBytes } from 'node:crypto';
-import { parseDocument } from 'yaml';
+import { parseDocument, LineCounter } from 'yaml';
+import { kernelDiagnostics } from './diagnostics.mjs';
 
 const exec = promisify(execFile);
 const CONFIG_LIMIT = 4 * 1024 * 1024;
@@ -57,8 +58,8 @@ async function servePanel(req, res, settings, session) {
   return true;
 }
 
-function httpError(status, message) {
-  return Object.assign(new Error(message), { status });
+function httpError(status, message, details = {}) {
+  return Object.assign(new Error(message), { status, ...details });
 }
 
 // The HTTP API accepts YAML only, never a shell command, URL to fetch or user-chosen filename.
@@ -66,11 +67,17 @@ function httpError(status, message) {
 export function inspectConfig(text) {
   if (typeof text !== 'string' || !text.trim()) throw httpError(400, '请提交非空配置文本。');
   if (Buffer.byteLength(text) > CONFIG_LIMIT) throw httpError(413, '配置超过 4 MiB。');
-  const doc = parseDocument(text, { uniqueKeys: true });
+  const lineCounter = new LineCounter();
+  const doc = parseDocument(text, { uniqueKeys: true, lineCounter, prettyErrors: false });
   if (doc.errors.length) {
     const error = doc.errors[0];
-    const at = error.linePos?.[0];
-    throw httpError(400, `YAML 解析失败${at ? `（第 ${at.line} 行，第 ${at.col} 列）` : ''}：${error.code || '语法错误'}`);
+    const position = error.pos?.[0];
+    const at = typeof position === 'number' ? lineCounter.linePos(position) : null;
+    const hints = { DUPLICATE_KEY: '存在重复字段', BAD_INDENT: '缩进不正确',
+      MISSING_CHAR: '缺少必要的引号、括号或分隔符', BLOCK_AS_IMPLICIT_KEY: '请检查缩进与字段冒号' };
+    const message = `YAML 语法错误：${hints[error.code] || error.code || '请检查配置格式'}`;
+    throw httpError(400, message, { diagnostics: [{ source: 'yaml', severity: 'error', message,
+      ...(at ? { line: at.line, column: at.col } : {}) }] });
   }
   let config;
   try { config = doc.toJS({ maxAliasCount: 100 }); }
@@ -88,9 +95,7 @@ export function inspectConfig(text) {
       if (typeof item === 'string') {
         if (/password|secret|token|uuid|private-key|authorization/i.test(key) && item.length >= 4)
           secrets.push(item);
-        if ((key === 'path' && (path.posix.isAbsolute(item) || path.win32.isAbsolute(item) ||
-            /(^|[\\/])\.\.([\\/]|$)/.test(item) || item.includes(':'))) ||
-            (FILE_KEYS.has(key) && item && !item.includes('-----BEGIN ')))
+        if (FILE_KEYS.has(key) && item && !item.includes('-----BEGIN '))
           throw httpError(422, '配置引用了外部本地文件；请使用内联证书及相对资源路径后再校验。');
       }
       visit(item, depth + 1);
@@ -100,18 +105,13 @@ export function inspectConfig(text) {
   for (const providers of [config['proxy-providers'], config['rule-providers']]) {
     for (const provider of Object.values(providers || {})) {
       if (provider?.type === 'file') throw httpError(422, '当前校验服务不接收本地 file Provider 文件。');
+      const file = provider?.path;
+      if (typeof file === 'string' && (path.posix.isAbsolute(file) || path.win32.isAbsolute(file) ||
+          /(^|[\\/])\.\.([\\/]|$)/.test(file) || file.includes(':')))
+        throw httpError(422, 'Provider 缓存路径需位于本次校验的临时目录内。');
     }
   }
-  // Geo databases are provisioned by the operator, not downloaded from request-controlled locations.
-  if (config['geox-url']) {
-    for (const value of Object.values(config['geox-url'])) {
-      let url;
-      try { url = new URL(value); } catch { throw httpError(422, 'geox-url 地址无效。'); }
-      if (url.protocol !== 'https:' || url.username || url.password ||
-          !['github.com', 'raw.githubusercontent.com', 'cdn.jsdelivr.net'].includes(url.hostname))
-        throw httpError(422, '校验服务仅允许官方 GitHub / jsDelivr 地理数据来源。');
-    }
-  }
+  // Keep geox-url and transport paths exactly as submitted; the kernel decides their validity.
   return { secrets };
 }
 
@@ -156,10 +156,14 @@ export async function testConfig(text, settings) {
       if (typeof error.code !== 'number') throw httpError(503, '无法执行 Mihomo 内核校验。');
       result = { ...error, valid: false };
     }
+    const rawOutput = `${result.stdout || ''}\n${result.stderr || ''}`.trim();
+    const redact = (value) => redactOutput(value, secrets, directory);
     return {
       engine: 'mihomo', mode: 'config-test', version: settings.version,
       valid: result.valid, durationMs: Date.now() - started,
-      output: redactOutput(`${result.stdout || ''}\n${result.stderr || ''}`.trim(), secrets, directory),
+      output: redact(rawOutput),
+      diagnostics: result.valid ? [] : kernelDiagnostics(text, rawOutput)
+        .map((diagnostic) => ({ ...diagnostic, message: redact(diagnostic.message) })),
     };
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -221,7 +225,9 @@ export function createValidatorServer(settings) {
       inspectConfig(body.config);
       send(200, await (settings.run || testConfig)(body.config, settings));
     } catch (error) {
-      send(error.status || 500, { error: error.status ? error.message : '校验服务内部错误，未完成校验。' });
+      if (error.diagnostics) send(200, { engine: 'mihomo', mode: 'config-test', version: settings.version,
+        valid: false, stage: 'yaml', durationMs: 0, output: error.message, diagnostics: error.diagnostics });
+      else send(error.status || 500, { error: error.status ? error.message : '校验服务内部错误，未完成校验。' });
     } finally { active = false; }
   });
   server.requestTimeout = 15000;

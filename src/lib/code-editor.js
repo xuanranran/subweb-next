@@ -7,6 +7,7 @@ import { tags } from '@lezer/highlight';
 import { openSearchPanel } from '@codemirror/search';
 import { yaml } from '@codemirror/lang-yaml';
 import { json } from '@codemirror/lang-json';
+import { lintGutter, setDiagnostics } from '@codemirror/lint';
 
 export function createCodeEditor(parent, options) {
   const language = new Compartment();
@@ -37,7 +38,7 @@ export function createCodeEditor(parent, options) {
     state: EditorState.create({
       doc: options.text,
       extensions: [
-        basicSetup, keymap.of([indentWithTab]), indentUnit.of('  '),
+        basicSetup, lintGutter(), keymap.of([indentWithTab]), indentUnit.of('  '),
         syntaxHighlighting(HighlightStyle.define([
           { tag: tags.propertyName, class: 'cm-config-key' },
           { tag: tags.string, class: 'cm-config-string' },
@@ -66,6 +67,25 @@ export function createCodeEditor(parent, options) {
       view.dispatch({ effects: [language.reconfigure(mode(options.language)), appearance.reconfigure(theme(options.dark)), editable.reconfigure(readOnly(options.readOnly))] });
     },
     wrap(enabled) { view.dispatch({ effects: wrapping.reconfigure(enabled ? EditorView.lineWrapping : []) }); },
+    diagnostics(items) {
+      const diagnostics = items.filter((item) => Number.isInteger(item.line) && item.line > 0 && item.line <= view.state.doc.lines)
+        .map((item) => {
+          const line = view.state.doc.line(item.line);
+          const from = Math.min(line.to, line.from + Math.max(0, (item.column || 1) - 1));
+          return { from, to: Math.min(view.state.doc.length, Math.max(from + 1, line.to)),
+            severity: 'error', message: item.message, source: item.source === 'yaml' ? 'YAML' : 'Mihomo' };
+        });
+      view.dispatch(setDiagnostics(view.state, diagnostics));
+    },
+    focusLine(number, column = 1) {
+      if (!Number.isInteger(number) || number < 1 || number > view.state.doc.lines) return;
+      const line = view.state.doc.line(number);
+      const position = Math.min(line.to, line.from + Math.max(0, column - 1));
+      unfoldAll(view);
+      view.dispatch({ selection: { anchor: position }, effects: EditorView.scrollIntoView(position, { y: 'center' }) });
+      view.dom.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+      view.focus();
+    },
     search() { openSearchPanel(view); view.focus(); },
     fold() { foldAll(view); }, unfold() { unfoldAll(view); },
     measure() { view.requestMeasure(); },
