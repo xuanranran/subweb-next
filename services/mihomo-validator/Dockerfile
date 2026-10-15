@@ -5,9 +5,10 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 COPY server.mjs ./
 COPY LICENSE ./LICENSE
+COPY public/ ./public/
 COPY --from=kernel /mihomo /usr/local/bin/mihomo-alpha
 COPY --from=kernel /root/.config/mihomo/ /opt/geodata/
-ENV MIHOMO_BIN=/usr/local/bin/mihomo-alpha MIHOMO_GEODATA_DIR=/opt/geodata VALIDATOR_HOST=0.0.0.0 VALIDATOR_PORT=25550
+ENV MIHOMO_BIN=/usr/local/bin/mihomo-alpha MIHOMO_GEODATA_DIR=/opt/geodata VALIDATOR_HOST=0.0.0.0 VALIDATOR_PORT=25550 VALIDATOR_STATIC_DIR=/app/public
 USER node
 EXPOSE 25550
 CMD ["node", "server.mjs"]

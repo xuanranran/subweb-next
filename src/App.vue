@@ -24,6 +24,7 @@ if (!backends.length)
     { id: '1', value: 'https://sub.miaoceo.com', text: 'subconverter', profile: 'standard' },
   );
 const currentSite = runtime.localBackend === false ? null : currentSiteBackend(window.location);
+if (currentSite && runtime.localBackendUrl) currentSite.value = runtime.localBackendUrl;
 if (currentSite) backends.push(currentSite);
 const selected = ref(backends[0].id);
 const userSelectedBackend = ref(false);
@@ -529,7 +530,7 @@ onBeforeUnmount(() => { clearValidation(); window.removeEventListener('storage',
             </div>
             <strong>{{ b.text }}</strong
             ><span class="engine-desc">{{
-              b.local ? '自动沿用当前访问地址' : PROFILES[b.profile]?.description
+              b.local ? (runtime.localBackendUrl ? '当前服务器的转换服务' : '自动沿用当前访问地址') : PROFILES[b.profile]?.description
             }}</span>
             <div class="engine-bottom">
               <code>{{ b.value.replace(/^https?:\/\//, '') }}</code

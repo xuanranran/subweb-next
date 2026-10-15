@@ -5,3 +5,4 @@ dist/
 *.log
 .DS_Store
 tests/.ui-*/
+services/mihomo-validator/public/

@@ -21,7 +21,7 @@ test('validator submits exact YAML and separate bearer token, handles native fai
   assert.equal(request.url, 'https://validator.example/prefix/validate');
   assert.deepEqual(JSON.parse(request.options.body), { config: yaml });
   assert.deepEqual(request.options.headers, { 'Content-Type': 'application/json', Authorization: 'Bearer test-secret' });
-  assert.equal(request.options.credentials, 'omit');
+  assert.equal(request.options.credentials, 'same-origin');
   reply = new Response('<html>verification</html>');
   await assert.rejects(validateMihomoConfig('https://validator.example', yaml), /JSON/);
   reply = Response.json({ valid: true });

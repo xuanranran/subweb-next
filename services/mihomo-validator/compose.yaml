@@ -1,12 +1,13 @@
 services:
   validator:
     image: ${VALIDATOR_IMAGE:-lovinyarn/subweb-next-validator:latest}
-    build: .
     ports:
       - "${VALIDATOR_BIND:-127.0.0.1}:25550:25550"
     environment:
       VALIDATOR_TOKEN: ${VALIDATOR_TOKEN:?请设置独立的校验访问令牌}
       VALIDATOR_ORIGINS: ${VALIDATOR_ORIGINS:-http://127.0.0.1:5173}
+      VALIDATOR_APP_ORIGIN: ${VALIDATOR_APP_ORIGIN:-http://127.0.0.1:25550}
+      SUBWEB_LOCAL_BACKEND_URL: ${SUBWEB_LOCAL_BACKEND_URL:-}
     read_only: true
     tmpfs:
       - /tmp:size=512m,mode=1777

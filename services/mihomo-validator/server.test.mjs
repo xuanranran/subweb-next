@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { execFileSync } from 'node:child_process';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { inspectConfig, redactOutput, createValidatorServer, testConfig } from './server.mjs';
 
 const valid = 'proxies: []\nproxy-groups:\n  - name: Test\n    type: select\n    proxies: [DIRECT]\nrules: ["MATCH,Test"]\n';
@@ -63,6 +66,55 @@ test('HTTP contract authenticates and checks CORS before accepting exact YAML, w
     release?.();
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('bundled panel serves assets and uses an origin-bound session without exposing API credentials', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'subweb-panel-test-'));
+  await mkdir(path.join(directory, 'conf'));
+  await writeFile(path.join(directory, 'index.html'), '<html>Subweb panel</html>');
+  await writeFile(path.join(directory, 'conf/config.js'), 'window.config = {};');
+  await writeFile(path.join(directory, '.private.txt'), 'private');
+  const appOrigin = 'http://panel.example:25550';
+  const server = createValidatorServer({
+    staticDir: directory, appOrigin, token: 'fixture-secret',
+    localBackendUrl: 'http://panel.example:25500', origins: ['https://other.example'],
+    run: async () => report,
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const url = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const page = await fetch(url);
+    assert.equal(page.status, 200);
+    assert.match(page.headers.get('content-type'), /text\/html/);
+    assert.match(await page.text(), /Subweb panel/);
+    const cookie = page.headers.get('set-cookie');
+    assert.match(cookie, /HttpOnly; SameSite=Strict/);
+    assert.doesNotMatch(cookie, /fixture-secret/);
+    const runtime = await (await fetch(`${url}/conf/config.js`)).text();
+    assert.match(runtime, /mihomoValidatorUrl/);
+    assert.match(runtime, /panel.example:25500/);
+    assert.doesNotMatch(runtime, /fixture-secret|subweb_session/);
+    assert.equal((await fetch(url, { method: 'HEAD' })).status, 200);
+    for (const suffix of ['/missing.js', '/.private.txt', '/%2eprivate.txt', '/conf%2f..%2f.private.txt'])
+      assert.notEqual((await fetch(url + suffix)).status, 200);
+    const headers = { 'Content-Type': 'application/json', Cookie: cookie.split(';')[0], Origin: appOrigin };
+    const post = (overrides = {}) => fetch(`${url}/validate`, {
+      method: 'POST', headers: { ...headers, ...overrides }, body: JSON.stringify({ config: valid }),
+    });
+    assert.deepEqual(await (await post()).json(), report);
+    assert.equal((await post({ Cookie: '' })).status, 401);
+    assert.equal((await post({ Cookie: 'subweb_session=wrong' })).status, 401);
+    assert.equal((await post({ Origin: '' })).status, 401);
+    assert.equal((await post({ Origin: 'https://other.example' })).status, 401);
+    assert.equal((await post({ Origin: 'https://evil.example' })).status, 403);
+    assert.equal((await fetch(`${url}/health`, { headers })).status, 401);
+    assert.equal((await post({ Cookie: '', Origin: 'https://other.example', Authorization: 'Bearer fixture-secret' })).status, 200);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

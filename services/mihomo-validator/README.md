@@ -1,6 +1,6 @@
 # Mihomo 配置校验服务
 
-独立于 subweb-next 静态前端与转换后端运行。浏览器先取得转换后的 YAML，再通过 `POST /validate` 提交原文；服务调用真实的 `mihomo -t -d <临时目录> -f <配置文件>`。不启动代理监听、不接管系统代理、不启用 TUN。
+浏览器先取得转换后的 YAML，再通过 `POST /validate` 提交原文；服务调用真实的 `mihomo -t -d <临时目录> -f <配置文件>`。不启动代理监听、不接管系统代理、不启用 TUN。发布的 Docker 镜像同时包含 subweb-next 面板，打开 `http://服务器IP:25550/` 即可使用；原来的纯静态前端部署方式仍然支持。
 
 ## 本机运行
 
@@ -30,14 +30,24 @@ VALIDATOR_TOKEN=替换成随机生成的独立访问令牌
 VALIDATOR_ORIGINS=https://你的前端域名
 ```
 
-然后运行：
+一体化面板部署还需设置页面来源；面板与转换服务端口不同的情况下指定转换地址：
 
-```shell
-docker compose build --pull
-docker compose up -d
+```dotenv
+VALIDATOR_BIND=192.168.2.190
+VALIDATOR_APP_ORIGIN=http://192.168.2.190:25550
+SUBWEB_LOCAL_BACKEND_URL=http://192.168.2.190:25500
 ```
 
-GitHub Actions 会在前端和真实 alpha 内核测试通过后，向 `lovinyarn/subweb-next-validator` 发布 `latest` 和 `sha-<提交>` 镜像（amd64 / arm64）。Docker Hub 凭据通过仓库的 `DOCKERHUB_USERNAME`、`DOCKERHUB_TOKEN` Secrets 注入。已发布后可用 `docker compose pull`、`docker compose up -d --no-build` 部署，无需本机编译。
+同端口面板自动填入校验地址，浏览器使用 HttpOnly、SameSite=Strict 会话 Cookie 调用校验接口，无须手填令牌。Cookie 只对 `VALIDATOR_APP_ORIGIN` 的同源校验 POST 生效，页面刷新即可取得新会话。此模式下，能访问局域网面板的用户即可提交校验；其他来源的 API 调用仍需 Bearer 令牌。令牌不会注入页面或静态配置。
+
+直接拉取 GitHub Actions 构建好的镜像：
+
+```shell
+docker compose pull
+docker compose up -d --no-build
+```
+
+GitHub Actions 会在前端和真实 alpha 内核测试通过后，将本次构建的前端产物装入镜像，向 `lovinyarn/subweb-next-validator` 发布 `latest` 和 `sha-<提交>` 镜像（amd64 / arm64）。Docker Hub 凭据通过仓库的 `DOCKERHUB_USERNAME`、`DOCKERHUB_TOKEN` Secrets 注入。部署无需本机编译。自行构建时先在仓库根目录运行 `npm ci && npm run build`，将 `dist/` 复制到服务目录的 `public/`，再构建 Dockerfile。
 
 Compose 默认仅将端口暴露到宿主机回环地址，并设置只读文件系统、临时目录、512 MiB 内存、1 CPU 和进程数限制。供公网前端使用时，在反向代理后以 HTTPS 提供服务，并把该 HTTPS 根地址填入前端。部署者需限制服务的出站网络访问；该接口面向可信用户，不用于匿名接收公网不可信配置。保留令牌校验和来源白名单。
 

@@ -1,11 +1,11 @@
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, writeFile, copyFile, rm, readdir } from 'node:fs/promises';
+import { mkdtemp, writeFile, copyFile, rm, readdir, readFile, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual, randomBytes } from 'node:crypto';
 import { parseDocument } from 'yaml';
 
 const exec = promisify(execFile);
@@ -14,6 +14,48 @@ const BODY_LIMIT = CONFIG_LIMIT * 2 + 1024;
 const OUTPUT_LIMIT = 64 * 1024;
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
 const FILE_KEYS = new Set(['certificate', 'private-key', 'ca', 'ca-file', 'client-cert', 'client-key']);
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.md': 'text/plain; charset=utf-8' };
+
+function equalSecret(received, expected) {
+  const a = Buffer.from(received || '');
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+async function servePanel(req, res, settings, session) {
+  if (!settings.staticDir || !['GET', 'HEAD'].includes(req.method)) return false;
+  let pathname;
+  try { pathname = decodeURIComponent(req.url.split('?')[0]); } catch { return false; }
+  if (!pathname.startsWith('/') || pathname.includes('\\') || pathname.includes('\0') ||
+      pathname.split('/').some((part) => part.startsWith('.'))) return false;
+  const relative = pathname === '/' ? 'index.html' : pathname.slice(1);
+  if (!MIME[path.extname(relative)]) return false;
+  let body;
+  try {
+    const root = await realpath(settings.staticDir);
+    const file = await realpath(path.resolve(root, relative));
+    if (!file.startsWith(root + path.sep)) return false;
+    body = await readFile(file);
+  } catch { return false; }
+  if (pathname === '/conf/config.js' && settings.appOrigin) {
+    // Public deployment addresses only. The API token never enters static JavaScript.
+    const overrides = { mihomoValidatorUrl: settings.appOrigin };
+    if (settings.localBackendUrl) overrides.localBackendUrl = settings.localBackendUrl;
+    body = Buffer.concat([body, Buffer.from(`\nObject.assign(window.config, ${JSON.stringify(overrides)});\n`)]);
+  }
+  if (relative === 'index.html' && settings.appOrigin) {
+    const secure = settings.appOrigin.startsWith('https:') ? '; Secure' : '';
+    res.setHeader('Set-Cookie', `subweb_session=${session}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${secure}`);
+  }
+  res.setHeader('Content-Type', MIME[path.extname(relative)]);
+  res.setHeader('Content-Length', body.length);
+  res.writeHead(200);
+  res.end(req.method === 'HEAD' ? undefined : body);
+  return true;
+}
 
 function httpError(status, message) {
   return Object.assign(new Error(message), { status });
@@ -127,6 +169,8 @@ export async function testConfig(text, settings) {
 export function createValidatorServer(settings) {
   let active = false;
   const origins = new Set(settings.origins || []);
+  if (settings.appOrigin) origins.add(settings.appOrigin);
+  const session = randomBytes(32).toString('hex');
   const server = createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -143,10 +187,14 @@ export function createValidatorServer(settings) {
         res.setHeader('Access-Control-Allow-Private-Network', 'true');
     }
     if (req.method === 'OPTIONS') return send(204, {});
-    if (settings.token) {
-      const received = Buffer.from(req.headers.authorization || '');
-      const expected = Buffer.from(`Bearer ${settings.token}`);
-      if (received.length !== expected.length || !timingSafeEqual(received, expected))
+    if (await servePanel(req, res, settings, session)) return;
+    // Only the bundled panel can use its HttpOnly session. Cross-origin clients still need Bearer auth.
+    const cookie = req.headers.cookie?.split(';').map((part) => part.trim())
+      .find((part) => part.startsWith('subweb_session='))?.slice('subweb_session='.length);
+    const panelRequest = settings.staticDir && settings.appOrigin && origin === settings.appOrigin &&
+      req.method === 'POST' && req.url === '/validate' && equalSecret(cookie, session);
+    if (settings.token && !panelRequest) {
+      if (!equalSecret(req.headers.authorization, `Bearer ${settings.token}`))
         return send(401, { error: '校验服务令牌不正确。' });
     }
     if (req.method === 'GET' && req.url === '/health')
@@ -191,6 +239,9 @@ export async function start() {
   if (!/Mihomo/i.test(version) || !/alpha/i.test(version)) throw new Error('请将 MIHOMO_BIN 指向 Mihomo alpha 内核。');
   const server = createValidatorServer({
     binary, version, token, geodataDir: process.env.MIHOMO_GEODATA_DIR,
+    staticDir: process.env.VALIDATOR_STATIC_DIR,
+    appOrigin: process.env.VALIDATOR_APP_ORIGIN ? new URL(process.env.VALIDATOR_APP_ORIGIN).origin : undefined,
+    localBackendUrl: process.env.SUBWEB_LOCAL_BACKEND_URL,
     origins: (process.env.VALIDATOR_ORIGINS || 'http://127.0.0.1:5173').split(',').map((v) => v.trim()).filter(Boolean),
   });
   const port = Number(process.env.VALIDATOR_PORT || 25550);

@@ -15,7 +15,7 @@ export async function validateMihomoConfig(service, config, token = '', signal) 
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify({ config }),
-    credentials: 'omit',
+    credentials: 'same-origin',
     cache: 'no-store',
     redirect: 'error',
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(35000)]) : AbortSignal.timeout(35000),
