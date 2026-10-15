@@ -83,12 +83,14 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
       ['src/App.vue', 'App.mjs'],
       ['src/components/OptionField.vue', 'OptionField.mjs'],
       ['src/components/CodeEditor.vue', 'CodeEditor.mjs'],
+      ['src/components/ConfigDialog.vue', 'ConfigDialog.mjs'],
     ]) {
       const source = await readFile(path.join(testRoot, '..', relative), 'utf8');
       const { descriptor } = parse(source);
       const compiled = compileScript(descriptor, { id: filename, inlineTemplate: true })
         .content.replaceAll('./components/OptionField.vue', './OptionField.mjs')
         .replaceAll('./components/CodeEditor.vue', './CodeEditor.mjs')
+        .replaceAll('./components/ConfigDialog.vue', './ConfigDialog.mjs')
         .replaceAll('../lib/code-editor.js', '../../src/lib/code-editor.js')
         .replaceAll('./lib/', '../../src/lib/');
       await writeFile(path.join(scratch, filename), compiled);
@@ -177,11 +179,34 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     await settle();
     assert.equal(button('复制转换链接').disabled, true);
     assert.equal(button('生成短链').disabled, true);
-    button('预览配置').click();
+    const previewTrigger = button('预览配置');
+    previewTrigger.focus();
+    previewTrigger.click();
     await settle();
     assert.equal(requests.at(-1).options.headers['X-Key'], 'secret-value');
     assert.ok(root.querySelector('.code-editor'));
+    const dialog = root.querySelector('dialog[open][aria-modal="true"]');
+    assert.ok(dialog, 'configuration opens in a native modal dialog');
+    assert.equal(window.document.body.style.overflow, 'hidden');
     assert.match(root.querySelector('.editor-fallback')?.value || root.querySelector('.cm-content')?.textContent || '', /synthetic/);
+    button('最大化').click();
+    await settle();
+    assert.ok(dialog.classList.contains('maximized'));
+    dialog.dispatchEvent(new window.Event('cancel', { cancelable: true }));
+    await settle();
+    assert.ok(!dialog.classList.contains('maximized'), 'Escape restores a maximized dialog first');
+    dialog.dispatchEvent(new window.Event('cancel', { cancelable: true }));
+    await settle();
+    assert.equal(root.querySelector('dialog'), null);
+    assert.equal(window.document.body.style.overflow, '');
+    assert.equal(window.document.activeElement, previewTrigger, 'closing returns keyboard focus to the triggering control');
+    const previewRequests = requests.length;
+    previewTrigger.click();
+    await settle();
+    assert.ok(root.querySelector('dialog[open]'));
+    assert.equal(requests.length, previewRequests, 'reopening preserves cached config without another request');
+    root.querySelector('.dialog-close').click();
+    await settle();
     button('恢复全部默认参数').click();
     await settle();
     assert.equal(root.querySelector('.output-panel'), null);
@@ -325,7 +350,7 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     domainButton('预览配置').click();
     await settle();
     const before = requests.length;
-    domainButton('内核校验').click();
+    domainButton('校验当前内容').click();
     await settle();
     assert.equal(requests.length, before + 1, 'existing preview is reused without re-conversion');
     assert.deepEqual(JSON.parse(requests.at(-1).options.body), { config: 'proxies:\n - name: synthetic' });
@@ -343,17 +368,34 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     assert.ok(domainRoot.querySelector('.cm-editor'), 'CodeMirror is loaded, not only the textarea fallback');
     const { EditorView } = await import('@codemirror/view');
     const { diagnosticCount } = await import('@codemirror/lint');
-    const codeView = EditorView.findFromDOM(domainRoot.querySelector('.cm-editor'));
+    let codeView = EditorView.findFromDOM(domainRoot.querySelector('.cm-editor'));
     assert.equal(diagnosticCount(codeView.state), 1);
+    domainButton('查看日志').click();
+    await settle();
+    assert.match(domainRoot.querySelector('.dialog-kernel-log').textContent, /invalid action/);
+    domainRoot.querySelector('.dialog-close').click();
+    await settle();
+    assert.equal(domainRoot.querySelector('dialog'), null);
+    assert.ok(domainRoot.querySelector('.validation-report'), 'closing the window preserves the matching validation report');
     domainRoot.querySelector('.validation-report .diagnostic-location').click();
     await settle();
+    assert.ok(domainRoot.querySelector('dialog[open]'), 'an error location reopens the editor window');
+    codeView = EditorView.findFromDOM(domainRoot.querySelector('.cm-editor'));
     assert.equal(codeView.state.selection.main.head, codeView.state.doc.line(2).from + 2);
     const editedConfig = 'proxies: []\nrules: ["MATCH,DIRECT"]\n';
     codeView.dispatch({ changes: { from: 0, to: codeView.state.doc.length, insert: editedConfig } });
     await settle();
     assert.equal(domainRoot.querySelector('.validation-report'), null, 'editing invalidates an existing kernel report');
     assert.equal(diagnosticCount(codeView.state), 0, 'editing clears obsolete source diagnostics');
-    domainButton('内核校验').click();
+    const beforeReopen = requests.length;
+    domainRoot.querySelector('.dialog-close').click();
+    await settle();
+    domainButton('预览配置').click();
+    await settle();
+    codeView = EditorView.findFromDOM(domainRoot.querySelector('.cm-editor'));
+    assert.equal(codeView.state.doc.toString(), editedConfig, 'closing and reopening does not discard local edits');
+    assert.equal(requests.length, beforeReopen);
+    domainButton('校验当前内容').click();
     await settle();
     assert.equal(JSON.parse(requests.at(-1).options.body).config, editedConfig, 'the edited YAML reaches the kernel service');
     pendingValidation(Response.json({ ...nativeReport, valid: true, output: 'test successful', diagnostics: [] }));

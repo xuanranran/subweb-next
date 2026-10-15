@@ -2,6 +2,7 @@
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch, nextTick } from 'vue';
 import OptionField from './components/OptionField.vue';
 import CodeEditor from './components/CodeEditor.vue';
+import ConfigDialog from './components/ConfigDialog.vue';
 import { PROFILES, SECTIONS, cleanOptions, parametersFor, targetsFor } from './lib/backends.js';
 import { buildConversion, sourceLines } from './lib/converter.js';
 import { copyText, createShortLink, fetchText, readVersion } from './lib/network.js';
@@ -54,6 +55,8 @@ const toast = ref('');
 const busy = ref('');
 const short = ref(null);
 const output = ref(null);
+const outputOpen = ref(false);
+const dialogLogOpen = ref(false);
 const historyStore = createConversionHistory(() => window.localStorage);
 const historyState = ref(historyStore.list());
 const historyOpen = ref(false);
@@ -61,6 +64,7 @@ const historyLabels = { copy: '复制链接', short: '生成短链', preview: '�
 const validation = ref(null);
 const configEditor = ref(null);
 async function jumpToDiagnostic(item) {
+  outputOpen.value = true;
   await nextTick();
   configEditor.value?.focusLine(item.line, item.column);
 }
@@ -132,6 +136,16 @@ const outputEdited = computed(() => !!currentOutput.value &&
   (currentOutput.value.editedBase || currentOutput.value.text !== currentOutput.value.originalText));
 const canValidate = computed(() => supportsMihomoValidation(target.value, options));
 const currentValidation = computed(() => validation.value?.source === generated.value.url ? validation.value : null);
+const outputStatus = computed(() => {
+  if (busy.value === 'validate') return 'Mihomo alpha 校验中…';
+  if (toast.value) return toast.value;
+  const report = currentValidation.value;
+  if (report) {
+    const label = report.valid ? '✓ 配置校验通过' : report.stage === 'yaml' ? 'YAML 语法检查未通过' : '配置校验未通过';
+    return label + (typeof report.durationMs === 'number' ? ` · ${report.durationMs} ms` : '');
+  }
+  return currentOutput.value?.diagnostic ? '只读诊断结果' : '修改保留在当前页面，关闭窗口不会丢失';
+});
 const needsHeaders = computed(() => Object.keys(generated.value.headers).length > 0);
 const description = computed(() => {
   if (profile.value === 'standard') return '源订阅由后端下载并转换，支持自定义规则与策略组。';
@@ -157,7 +171,7 @@ function editOutput(text) {
   revision.value++;
   clearValidation();
 }
-function closeOutput() { output.value = null; revision.value++; clearValidation(); }
+function closeOutput() { outputOpen.value = false; }
 function saveEditedOutput() {
   rememberConversion('save', currentOutput.value.text, outputEdited.value);
   notify(historyState.value.error || '配置已保存到本地转换记录');
@@ -196,10 +210,13 @@ async function restoreConversion(record) {
     configChoice.value = 'custom'; customConfig.value = saved.config;
   } else configChoice.value = saved.config;
   await nextTick();
-  if (record.configText) output.value = {
-    source: generated.value.url, text: record.configText, originalText: record.configText,
-    editedBase: record.edited, diagnostic: false,
-  };
+  if (record.configText) {
+    output.value = {
+      source: generated.value.url, text: record.configText, originalText: record.configText,
+      editedBase: record.edited, diagnostic: false,
+    };
+    outputOpen.value = true;
+  }
   notify(saved.hasHeaders ? '已恢复参数；请求头密钥未保存，请重新填写' : '已从本地记录恢复');
 }
 function historyChanged(event) {
@@ -277,13 +294,17 @@ async function requestOutput(diagnostic = false, download = false) {
       if (diagnostic || !currentOutput.value || currentOutput.value.diagnostic)
         output.value = { source: original, text: result, originalText: result, diagnostic };
       if (!diagnostic) rememberConversion('preview', text, outputEdited.value);
+      outputOpen.value = true;
     }
   });
 }
 async function checkMihomo() {
   if (!validatorUrl.value.trim()) {
+    closeOutput();
     validatorSettings.value = true;
     error.value = '请先填写内核校验服务地址。';
+    await nextTick();
+    document.querySelector('#validator-url')?.focus();
     return;
   }
   await run('validate', async () => {
@@ -301,6 +322,7 @@ async function checkMihomo() {
       if (revision.value !== requestRevision || controller.signal.aborted) return;
       if (!currentOutput.value || currentOutput.value.diagnostic)
         output.value = { source: req.url, text, originalText: text, diagnostic: false };
+      outputOpen.value = true;
       rememberConversion('validate', text, outputEdited.value);
       const checkedEdited = outputEdited.value;
       const result = await validateMihomoConfig(service, text, token, controller.signal);
@@ -317,6 +339,7 @@ async function checkMihomo() {
 function clearValidation() {
   validationController?.abort();
   validation.value = null;
+  dialogLogOpen.value = false;
 }
 watch([validatorUrl, validatorToken], () => { revision.value++; clearValidation(); error.value = ''; });
 function selectBackend(id) {
@@ -405,6 +428,7 @@ watch(
     error.value = '';
     short.value = null;
     output.value = null;
+    outputOpen.value = false;
     clearValidation();
   },
   { deep: true },
@@ -862,12 +886,8 @@ onBeforeUnmount(() => { clearValidation(); window.removeEventListener('storage',
           </section>
         </div>
       </div>
-      <div v-if="currentOutput" class="output-stage">
-        <section class="panel output-panel">
-          <div class="panel-heading">
-            <h2>{{ currentOutput.diagnostic ? '转换诊断 · JSON' : '转换后配置' }}<span v-if="!currentOutput.diagnostic && outputEdited" class="small-badge">已本地编辑</span></h2>
-            <button class="text-button" @click="closeOutput">关闭 ×</button>
-          </div>
+      <ConfigDialog v-if="currentOutput && outputOpen" :title="currentOutput.diagnostic ? '转换诊断 · JSON' : '转换后配置'" @close="closeOutput" @resize="configEditor?.measure()">
+          <template #badge><span v-if="!currentOutput.diagnostic && outputEdited" class="small-badge">已本地编辑</span></template>
           <div v-if="!currentOutput.diagnostic" class="output-actions">
             <button class="text-button" @click="run('copy-config', async () => { await copyText(currentOutput.text); notify('配置内容已复制'); })">复制配置</button>
             <button class="text-button" :disabled="!!busy" @click="downloadText(currentOutput.text); rememberConversion('download', currentOutput.text, outputEdited)">下载当前内容</button>
@@ -876,9 +896,16 @@ onBeforeUnmount(() => { clearValidation(); window.removeEventListener('storage',
             <button class="text-button" :disabled="currentOutput.text === currentOutput.originalText" @click="editOutput(currentOutput.originalText)">恢复载入内容</button>
           </div>
           <p v-if="!currentOutput.diagnostic" class="field-help editor-note">可直接查看和编辑生成结果。本地修改用于复制、下载及内核校验，不会改变订阅链接或转换后端。</p>
+          <p v-if="error" class="error dialog-error" role="alert">{{ error }}</p>
           <CodeEditor ref="configEditor" :model-value="currentOutput.text" :language="currentOutput.diagnostic ? 'JSON' : chosenTarget.format" :theme="theme" :read-only="currentOutput.diagnostic" :diagnostics="currentOutput.diagnostic ? [] : currentValidation?.diagnostics || []" @update:model-value="editOutput" />
-        </section>
-      </div>
+          <pre v-if="dialogLogOpen && currentValidation?.output" class="dialog-kernel-log">{{ currentValidation.output }}</pre>
+          <template #status>
+            <span role="status" class="dialog-status" :class="{ failed: currentValidation && !currentValidation.valid }">
+              {{ outputStatus }}
+            </span>
+            <button v-if="currentValidation?.output" type="button" class="text-button" :aria-expanded="dialogLogOpen" @click="dialogLogOpen = !dialogLogOpen">{{ dialogLogOpen ? '收起日志' : '查看日志' }}</button>
+          </template>
+      </ConfigDialog>
       <details class="conversion-history panel" :open="historyOpen" @toggle="historyOpen = $event.target.open">
         <summary>转换记录 <span class="small-badge">{{ historyState.items.length }}</span><span class="muted">仅当前浏览器</span></summary>
         <div class="history-heading"><p class="field-help">不上传云端，最多保留 20 条。记录含订阅参数；请求头密钥和校验服务令牌不保存。</p><button class="text-button" :disabled="!historyState.items.length" @click="historyState = historyStore.clear()">清空记录</button></div>

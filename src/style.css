@@ -827,22 +827,15 @@ summary {
   font-size: 12px;
   max-width: calc(100vw - 32px);
 }
-.output-stage {
-  margin-top: 22px;
-}
 .output-actions { display: flex; flex-wrap: wrap; gap: 12px 20px; margin-bottom: 12px; }
 .output-actions button { font-size: 11px; }
 .editor-note { margin-bottom: 14px; }
 .code-editor { min-width: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--input); }
-.code-editor.fullscreen { position: fixed; inset: 12px; z-index: 100; display: flex; flex-direction: column; border-radius: 12px; box-shadow: 0 0 0 100vmax #0009; }
 .editor-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel); font-size: 10px; }
 .editor-toolbar > div { display: flex; flex-wrap: wrap; gap: 8px 14px; }
 .editor-toolbar button { font-size: 10px; }
 .code-mirror-host { min-width: 0; }
 .code-mirror-host .cm-editor { max-height: 600px; }
-.code-editor.fullscreen .code-mirror-host { flex: 1; min-height: 0; display: flex; }
-.code-editor.fullscreen .cm-editor { flex: 1; max-height: none; min-width: 0; }
-.code-editor.fullscreen .editor-fallback { flex: 1; height: auto; }
 .editor-fallback { display: block; width: 100%; min-height: 320px; height: 420px; border: 0; border-radius: 0; font-size: 12px; line-height: 1.8; }
 .conversion-history { margin-top: 22px; }
 .conversion-history > summary { cursor: pointer; font-size: 13px; font-weight: 600; }
@@ -859,7 +852,6 @@ summary {
 .history-list button { font-size: 11px; }
 @media (max-width: 600px) {
   .editor-toolbar { align-items: flex-start; flex-direction: column; }
-  .code-editor.fullscreen { inset: 0; border-radius: 0; }
   .history-list li { align-items: flex-start; }
 }
 .output-panel pre {
@@ -874,6 +866,47 @@ summary {
   font-size: 11px;
   line-height: 1.8;
   margin: 0;
+}
+.output-dialog { width: min(1280px, calc(100vw - 48px)); height: min(900px, calc(100dvh - 64px)); max-width: none; max-height: none; margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--text); box-shadow: 0 24px 100px #0006; overflow: hidden; }
+.output-dialog[open] { display: flex; flex-direction: column; }
+.output-dialog::backdrop { background: #080c178c; backdrop-filter: blur(4px); }
+.output-dialog.maximized { width: calc(100vw - 24px); height: calc(100dvh - 24px); border-radius: 10px; }
+.dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; background: var(--bg); border-bottom: 1px solid var(--line); flex-shrink: 0; }
+.dialog-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.dialog-title h2 { font-size: 14px; margin: 0; }
+.dialog-window-controls { display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
+.dialog-window-controls button { font-size: 11px; padding: 6px 8px; border-radius: 6px; }
+.dialog-close { color: var(--muted); }
+.dialog-close:hover { background: var(--tint); }
+.dialog-body { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; padding: 14px; gap: 10px; overflow: hidden; }
+.dialog-body .output-actions, .dialog-body .editor-note { margin: 0; flex-shrink: 0; }
+.dialog-body .output-actions { gap: 8px 18px; }
+.dialog-body .code-editor { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.dialog-body .code-mirror-host { display: flex; flex: 1; min-height: 0; }
+.dialog-body .cm-editor { flex: 1; min-width: 0; max-height: none; }
+.dialog-body .code-editor .cm-content { min-height: 100px; }
+.dialog-body .editor-toolbar { flex-shrink: 0; }
+.dialog-body .editor-fallback { flex: 1; min-height: 100px; height: auto; resize: none; }
+.dialog-body .dialog-error { margin: 0; flex-shrink: 0; max-height: 90px; overflow: auto; }
+.output-dialog .dialog-kernel-log { max-height: 150px; flex-shrink: 0; margin: 0; padding: 12px; }
+.output-dialog .dialog-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 8px 16px; flex-shrink: 0; margin: 0; padding: 10px 18px; border-top: 1px solid var(--line); background: var(--bg); font-size: 10px; }
+.dialog-status { flex: 1; min-width: 160px; overflow-wrap: anywhere; }
+.dialog-status.failed { color: #cc5656; }
+.dialog-footer button, .dialog-key-hint { font-size: 10px; }
+.dialog-key-hint { color: var(--muted); }
+@media (max-width: 600px) {
+  .output-dialog, .output-dialog.maximized { width: 100%; height: 100dvh; max-height: 100dvh; margin: 0; border: 0; border-radius: 0; }
+  .dialog-heading { padding: 10px 12px; gap: 8px; }
+  .dialog-title h2 { font-size: 12px; }
+  .dialog-title { gap: 6px; flex-wrap: wrap; }
+  .dialog-window-controls { gap: 4px; }
+  .dialog-window-controls button { font-size: 10px; padding: 6px; }
+  .dialog-body { padding: 10px; gap: 8px; }
+  .dialog-body .editor-note { font-size: 9px; }
+  .dialog-body .output-actions { gap: 6px 12px; }
+  .dialog-body .output-actions button { font-size: 10px; }
+  .output-dialog .dialog-footer { padding: 9px 12px max(9px, env(safe-area-inset-bottom)); }
+  .dialog-key-hint { display: none; }
 }
 footer {
   display: flex;
