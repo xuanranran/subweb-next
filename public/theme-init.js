@@ -4,4 +4,5 @@
   try { mode = localStorage.getItem('subweb-theme-mode') || 'auto'; } catch { /* unavailable storage */ }
   const dark = mode === 'dark' || (mode !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#000000' : '#f5f6f8');
 })();
