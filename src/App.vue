@@ -556,10 +556,10 @@ onBeforeUnmount(() => {
             <option v-if="selected === 'custom'" value="custom">自定义后端</option>
           </select>
           <div class="mobile-engine-address">
-            <code>{{ address.replace(/^https?:\/\//, '') || '请填写自定义地址' }}</code>
             <details class="mobile-engine-status" :key="selected">
               <summary>
-                {{
+                <code>{{ address.replace(/^https?:\/\//, '') || '请填写自定义地址' }}</code>
+                <span class="mobile-version-label">{{
                   versions[selected]?.loading
                     ? '读取中…'
                     : versions[selected]?.text
@@ -567,7 +567,7 @@ onBeforeUnmount(() => {
                       : versions[selected]?.error
                         ? '读取失败'
                         : '待检查'
-                }}
+                }} <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg></span>
               </summary>
               <p>
                 {{
