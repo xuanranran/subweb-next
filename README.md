@@ -8,7 +8,7 @@
 
 全局字体依次使用 `'Twemoji Mozilla', 'Consolas', 'Menlo', 'Monaco', 'Lucida Console', 'Liberation Mono', 'DejaVu Sans Mono', 'Google Sans'`，正文、表单控件、按钮和代码预览采用同一顺序。Twemoji Mozilla 和 Google Sans 随项目提供 WOFF2 字体，优先使用设备已安装的版本，其余字体使用设备上的版本。不请求外部字体 CDN；字体按实际使用加载，Google Sans 包含 400–700 可变字重和斜体。来源、许可和维护方式见 [字体说明](public/fonts/README.md)。
 
-当前界面不加载液态玻璃渲染器或其样式，不依赖 WebGPU。主题与控件支持系统减少动画及高对比度设置。
+主题与控件支持系统减少动画及高对比度设置。
 
 ## 已配置的服务
 
@@ -101,7 +101,7 @@ Extended 的 Clash / Mihomo 与 ClashR 配置列表新增 Aethersailor 分组，
 
 可选公网只读检查：`node scripts/smoke-backends.mjs`。它使用 TEST-NET 地址的合成 SS 节点，检查两端 `/version`、Clash / sing-box 转换、Extended 诊断及 CORS 响应；不会使用真实订阅，也不会在服务器上编译代码。
 
-2026-10-13 本地的 36 项测试与现代界面构建通过；本地地址、CIDR 边界、域名隐藏、自定义类型识别、过期版本响应、模板筛选、去重、链接编码和规则展开选择均已覆盖。保留的玻璃渲染辅助模块测试仍可运行，当前界面不加载它。此前短链 POST 返回 200，GET 返回 302，Location 与生成链接一致。公网 Extended sing-box 曾返回一次 503，随后同请求成功；在线能力由实际后端版本和配置决定。浏览器集成初始化失败，Windows 窗口控制因无法可靠识别当前浏览器网址而停止；未完成新版界面的真实浏览器截图验收。
+本地地址、CIDR 边界、域名隐藏、自定义类型识别、过期版本响应、模板筛选、去重、链接编码和规则展开选择均已覆盖。此前短链 POST 返回 200，GET 返回 302，Location 与生成链接一致。在线能力由实际后端版本和配置决定。浏览器集成初始化失败，Windows 窗口控制因无法可靠识别当前浏览器网址而停止；未完成新版界面的真实浏览器截图验收。
 
 ## 项目来源
 

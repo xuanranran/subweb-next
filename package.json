@@ -20,7 +20,6 @@
     "@codemirror/search": "6.5.8",
     "@codemirror/state": "6.5.0",
     "@codemirror/view": "6.38.8",
-    "@glass-sdk/liquid-glass": "^0.0.2",
     "@lezer/highlight": "1.2.1",
     "codemirror": "6.0.2",
     "vue": "3.5.43"
