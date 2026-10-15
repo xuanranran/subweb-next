@@ -11,6 +11,22 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
   const testRoot = path.dirname(fileURLToPath(import.meta.url));
   const scratch = await mkdtemp(path.join(testRoot, '.ui-'));
   const window = new Window({ url: 'http://192.168.2.190:25500/' });
+  const themeListeners = new Set();
+  const systemTheme = { matches: false,
+    addEventListener(type, listener) { if (type === 'change') themeListeners.add(listener); },
+    removeEventListener(type, listener) { if (type === 'change') themeListeners.delete(listener); },
+  };
+  const originalMatchMedia = window.matchMedia.bind(window);
+  t.mock.method(window, 'matchMedia', (query) => query === '(prefers-color-scheme: dark)' ? systemTheme : originalMatchMedia(query));
+  const changeSystemTheme = (matches) => {
+    systemTheme.matches = matches;
+    for (const listener of themeListeners) listener({ matches });
+  };
+  // Old versions wrote the resolved color on every visit; that must not override the new auto default.
+  window.localStorage.setItem('subweb-theme', 'dark');
+  const earlyTheme = await readFile(path.join(testRoot, '../public/theme-init.js'), 'utf8');
+  window.eval(earlyTheme);
+  assert.equal(window.document.documentElement.dataset.theme, 'light');
   for (const key of [
     'window',
     'document',
@@ -120,6 +136,26 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     await settle();
     assert.equal(root.querySelectorAll('#target option').length, 22);
     assert.equal(requests.length, 3, 'only version requests happen automatically');
+    assert.equal(root.querySelector('#theme-mode').value, 'auto');
+    assert.equal(window.document.documentElement.dataset.theme, 'light');
+    changeSystemTheme(true);
+    await settle();
+    assert.equal(window.document.documentElement.dataset.theme, 'dark', 'auto mode reacts to browser color changes');
+    await setInput('#theme-mode', 'light');
+    assert.equal(window.localStorage.getItem('subweb-theme-mode'), 'light');
+    changeSystemTheme(false);
+    changeSystemTheme(true);
+    await settle();
+    assert.equal(window.document.documentElement.dataset.theme, 'light', 'manual light mode ignores system changes');
+    await setInput('#theme-mode', 'auto');
+    assert.equal(window.document.documentElement.dataset.theme, 'dark', 'returning to auto uses the current browser preference');
+    await setInput('#theme-mode', 'dark');
+    changeSystemTheme(false);
+    await settle();
+    assert.equal(window.document.documentElement.dataset.theme, 'dark', 'manual dark mode ignores system changes');
+    await setInput('#theme-mode', 'light');
+    changeSystemTheme(true);
+    await settle();
     await setInput('#sources', 'https://example.com/sub?a=1&token=a+b');
     assert.equal(requests.length, 3, 'editing subscriptions stays local');
     assert.equal(
@@ -345,6 +381,13 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     app = createApp(Panel);
     app.mount(autoRoot);
     await settle();
+    assert.equal(autoRoot.querySelector('#theme-mode').value, 'light', 'explicit theme selection survives remounting');
+    assert.equal(window.document.documentElement.dataset.theme, 'light');
+    const autoTheme = autoRoot.querySelector('#theme-mode');
+    autoTheme.value = 'auto';
+    autoTheme.dispatchEvent(new window.Event('change', { bubbles: true }));
+    await settle();
+    assert.equal(window.document.documentElement.dataset.theme, 'dark');
     assert.ok(autoRoot.querySelector('.engine-card.local.selected'));
     assert.equal(autoRoot.querySelectorAll('#target option').length, 22);
     assert.equal(autoRoot.querySelector('#local-profile'), null);
@@ -491,6 +534,7 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     assert.equal(domainRoot.querySelector('#validator-token'), null);
   } finally {
     if (app) app.unmount();
+    assert.equal(themeListeners.size, 0, 'system theme listeners are removed on unmount');
     await window.happyDOM.close();
     assert.equal(path.dirname(path.resolve(scratch)), path.resolve(testRoot));
     assert.ok(path.basename(scratch).startsWith('.ui-'));

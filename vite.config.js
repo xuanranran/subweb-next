@@ -9,7 +9,10 @@ export default defineConfig({
       name: 'runtime-config',
       transformIndexHtml: {
         order: 'post',
-        handler: () => [{ tag: 'script', attrs: { src: './conf/config.js' }, injectTo: 'head' }],
+        handler: () => [
+          { tag: 'script', attrs: { src: './theme-init.js' }, injectTo: 'head' },
+          { tag: 'script', attrs: { src: './conf/config.js' }, injectTo: 'head' },
+        ],
       },
     },
   ],

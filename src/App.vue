@@ -44,9 +44,14 @@ const options = reactive({});
 const headerValues = ref('');
 const advanced = ref(false);
 const activeSection = ref('output');
-const theme = ref('light');
+const themePreference = ref('auto');
+const themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
+const systemDark = ref(themeMedia.matches);
+const theme = computed(() => themePreference.value === 'auto' ? (systemDark.value ? 'dark' : 'light') : themePreference.value);
+function systemThemeChanged(event) { systemDark.value = event.matches; }
 try {
-  theme.value = localStorage.getItem('subweb-theme') || 'light';
+  const saved = window.localStorage.getItem('subweb-theme-mode');
+  if (['auto', 'light', 'dark'].includes(saved)) themePreference.value = saved;
 } catch {
   /* unavailable browser storage */
 }
@@ -437,16 +442,31 @@ watch(
   theme,
   (value) => {
     document.documentElement.dataset.theme = value;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', value === 'dark' ? '#11141b' : '#f5f6f8');
+  },
+  { immediate: true },
+);
+watch(
+  themePreference,
+  (value) => {
     try {
-      localStorage.setItem('subweb-theme', value);
+      window.localStorage.setItem('subweb-theme-mode', value);
     } catch {
       /* optional preference */
     }
   },
   { immediate: true },
 );
-onMounted(() => { checkVersions(true); window.addEventListener('storage', historyChanged); });
-onBeforeUnmount(() => { clearValidation(); window.removeEventListener('storage', historyChanged); });
+onMounted(() => {
+  checkVersions(true);
+  window.addEventListener('storage', historyChanged);
+  themeMedia.addEventListener('change', systemThemeChanged);
+});
+onBeforeUnmount(() => {
+  clearValidation();
+  window.removeEventListener('storage', historyChanged);
+  themeMedia.removeEventListener('change', systemThemeChanged);
+});
 </script>
 
 <template>
@@ -467,12 +487,13 @@ onBeforeUnmount(() => { clearValidation(); window.removeEventListener('storage',
         >
         <div class="top-actions">
           <a :href="PROFILES[profile].source" target="_blank" rel="noreferrer">后端源码 ↗</a
-          ><button
-            class="icon-button"
-            @click="theme = theme === 'light' ? 'dark' : 'light'"
-            :aria-label="theme === 'light' ? '切换深色模式' : '切换浅色模式'"
           >
-            <svg v-if="theme === 'light'" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <label class="theme-control" for="theme-mode">
+            <svg v-if="themePreference === 'auto'" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="13" rx="2" stroke="currentColor" stroke-width="1.6" />
+              <path d="M8 21h8m-4-4v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
+            <svg v-else-if="theme === 'dark'" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
                 d="M20 14.2A8 8 0 0 1 9.8 4a8.2 8.2 0 1 0 10.2 10.2Z"
                 stroke="currentColor"
@@ -489,7 +510,12 @@ onBeforeUnmount(() => { clearValidation(); window.removeEventListener('storage',
                 stroke-linecap="round"
               />
             </svg>
-          </button>
+            <select id="theme-mode" v-model="themePreference" aria-label="主题模式" title="自动模式跟随浏览器的明暗偏好">
+              <option value="auto">自动</option>
+              <option value="light">亮色</option>
+              <option value="dark">暗色</option>
+            </select>
+          </label>
         </div>
       </header>
     </div>
