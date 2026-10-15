@@ -132,7 +132,10 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
         assert.ok(option);
         option.click();
         await settle();
-        assert.equal(root.querySelector('.theme-panel'), null, 'choosing a mode dismisses the compact panel');
+        assert.ok(root.querySelector('.theme-panel'), 'choosing a mode keeps comparison controls available');
+        assert.equal(option.getAttribute('aria-pressed'), 'true');
+        root.querySelector('[aria-label="关闭主题设置"]').click();
+        await settle();
         return;
       }
       const input = root.querySelector(selector);
@@ -153,6 +156,17 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     await settle();
     assert.equal(themeTrigger.getAttribute('aria-expanded'), 'true');
     assert.equal(root.querySelector('.theme-segments [data-mode="auto"]').getAttribute('aria-pressed'), 'true');
+    const floatingTheme = root.querySelector('.theme-panel');
+    assert.equal(floatingTheme.getAttribute('role'), 'dialog');
+    assert.match(floatingTheme.querySelector('.theme-description').textContent, /跟随浏览器/);
+    const panelBox = t.mock.method(floatingTheme, 'getBoundingClientRect', () => ({ width: 242, height: 130 }));
+    const triggerBox = t.mock.method(themeTrigger, 'getBoundingClientRect', () => ({ right: 30, bottom: window.innerHeight - 15, top: window.innerHeight - 49 }));
+    window.dispatchEvent(new window.Event('resize'));
+    await settle();
+    assert.equal(floatingTheme.style.left, '8px', 'theme popover is clamped to the viewport');
+    assert.equal(floatingTheme.style.top, `${window.innerHeight - 187}px`, 'theme popover moves above its trigger when space is limited');
+    triggerBox.mock.restore();
+    panelBox.mock.restore();
     themeTrigger.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await settle();
     assert.equal(root.querySelector('.theme-panel'), null);
@@ -178,6 +192,16 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     changeSystemTheme(false);
     await settle();
     assert.equal(window.document.documentElement.dataset.theme, 'dark', 'manual dark mode ignores system changes');
+    window.localStorage.setItem('subweb-theme-mode', 'light');
+    window.dispatchEvent(new window.StorageEvent('storage', { key: 'subweb-theme-mode', newValue: 'light' }));
+    await settle();
+    assert.equal(window.document.documentElement.dataset.theme, 'light', 'theme changes sync from another tab');
+    window.localStorage.setItem('subweb-theme-mode', 'auto');
+    window.dispatchEvent(new window.StorageEvent('storage', { key: 'subweb-theme-mode', newValue: 'auto' }));
+    await settle();
+    changeSystemTheme(true);
+    await settle();
+    assert.equal(window.document.documentElement.dataset.theme, 'dark', 'cross-tab auto mode resumes browser preference tracking');
     await setInput('#theme-mode', 'light');
     changeSystemTheme(true);
     await settle();
@@ -411,6 +435,9 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     autoRoot.querySelector('.theme-trigger').click();
     await settle();
     autoRoot.querySelector('.theme-segments [data-mode="auto"]').click();
+    await settle();
+    assert.ok(autoRoot.querySelector('.theme-panel'));
+    autoRoot.querySelector('[aria-label="关闭主题设置"]').click();
     await settle();
     assert.equal(window.document.documentElement.dataset.theme, 'dark');
     assert.ok(autoRoot.querySelector('.engine-card.local.selected'));

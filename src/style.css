@@ -213,7 +213,8 @@ label > textarea {
 .theme-picker { position: relative; }
 .theme-trigger { border-radius: 8px; }
 :root[data-theme='dark'] .theme-trigger { background: #080b10; }
-.theme-panel { position: absolute; right: 0; top: calc(100% + 10px); z-index: 40; width: 242px; max-width: calc(100vw - 32px); padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); box-shadow: 0 12px 32px #0003; }
+.theme-panel { position: fixed; z-index: 40; width: 242px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow-y: auto; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); box-shadow: 0 12px 32px #0003; }
+.theme-description { color: var(--muted); font-size: 10px; line-height: 1.65; margin-top: 9px; }
 .theme-panel-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .theme-panel-heading strong { font-size: 12px; }
 .theme-panel-heading button { padding: 0 4px; font-size: 18px; line-height: 1.2; color: var(--muted); }
