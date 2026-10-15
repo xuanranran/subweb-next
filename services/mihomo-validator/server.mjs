@@ -193,7 +193,7 @@ export async function start() {
     binary, version, token, geodataDir: process.env.MIHOMO_GEODATA_DIR,
     origins: (process.env.VALIDATOR_ORIGINS || 'http://127.0.0.1:5173').split(',').map((v) => v.trim()).filter(Boolean),
   });
-  const port = Number(process.env.VALIDATOR_PORT || 25501);
+  const port = Number(process.env.VALIDATOR_PORT || 25550);
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, resolve); });
   console.log(`Mihomo validator listening on ${host}:${port}; ${version}`);
   return server;

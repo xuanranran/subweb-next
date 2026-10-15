@@ -820,7 +820,7 @@ onBeforeUnmount(() => { clearValidation(); window.removeEventListener('storage',
               <div v-if="canValidate" class="validator-section">
                 <details class="validator-settings" :open="validatorSettings" @toggle="validatorSettings = $event.target.open">
                   <summary>校验服务设置</summary>
-                  <label for="validator-url">服务地址<input id="validator-url" v-model="validatorUrl" type="url" placeholder="http://127.0.0.1:25501" /></label>
+                  <label for="validator-url">服务地址<input id="validator-url" v-model="validatorUrl" type="url" placeholder="http://127.0.0.1:25550" /></label>
                   <label for="validator-token">访问令牌（如服务需要）<input id="validator-token" v-model="validatorToken" type="password" autocomplete="off" placeholder="仅在本次页面中使用" /></label>
                   <p class="field-help">校验会将完整配置发送到此服务，可能包含订阅地址与节点密钥。请使用你信任的服务；HTTPS 页面请配套 HTTPS 校验地址。</p>
                 </details>

@@ -8,8 +8,8 @@ const headers = { Authorization: 'Bearer ci-smoke-token', 'Content-Type': 'appli
 try {
   docker('run', '-d', '--name', name, '--read-only', '--cap-drop', 'ALL', '--pids-limit', '64',
     '--memory', '512m', '--cpus', '1', '--tmpfs', '/tmp:size=512m,mode=1777',
-    '-p', '127.0.0.1::25501', '-e', 'VALIDATOR_TOKEN=ci-smoke-token', 'subweb-validator:smoke');
-  const port = docker('port', name, '25501/tcp');
+    '-p', '127.0.0.1::25550', '-e', 'VALIDATOR_TOKEN=ci-smoke-token', 'subweb-validator:smoke');
+  const port = docker('port', name, '25550/tcp');
   const url = `http://${port}`;
   let health;
   for (let attempt = 0; attempt < 50; attempt++) {

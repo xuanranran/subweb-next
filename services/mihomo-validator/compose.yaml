@@ -1,9 +1,9 @@
 services:
   validator:
-    image: lovinyarn/subweb-next-validator:latest
+    image: ${VALIDATOR_IMAGE:-lovinyarn/subweb-next-validator:latest}
     build: .
     ports:
-      - "127.0.0.1:25501:25501"
+      - "${VALIDATOR_BIND:-127.0.0.1}:25550:25550"
     environment:
       VALIDATOR_TOKEN: ${VALIDATOR_TOKEN:?请设置独立的校验访问令牌}
       VALIDATOR_ORIGINS: ${VALIDATOR_ORIGINS:-http://127.0.0.1:5173}
