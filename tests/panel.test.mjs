@@ -14,17 +14,24 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
   for (const key of [
     'window',
     'document',
+    'Document',
+    'ShadowRoot',
     'navigator',
     'HTMLElement',
     'SVGElement',
     'Element',
     'Node',
     'Event',
+    'MutationObserver',
+    'DOMRect',
+    'Range',
   ])
     Object.defineProperty(globalThis, key, {
       configurable: true,
       value: key === 'window' ? window : window[key],
     });
+  for (const key of ['requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle'])
+    Object.defineProperty(globalThis, key, { configurable: true, value: window[key].bind(window) });
   window.config = {
     apiUrl: [
       { value: 'https://api.miaoceo.com', text: 'SubConverter-Extended', profile: 'extended' },
@@ -37,6 +44,7 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     copied.push(text);
   };
   let pendingShort;
+  let pendingValidation;
   let localVersion = null;
   let pendingLocalVersion;
   let deferLocalVersion = false;
@@ -64,6 +72,8 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
       return new Promise((resolve) => {
         pendingShort = resolve;
       });
+    if (String(url).endsWith('/validate'))
+      return new Promise((resolve) => { pendingValidation = resolve; });
     if (String(url).includes('explain=true')) return Response.json({ ok: true, target: 'clash' });
     return new Response('proxies:\n - name: synthetic');
   });
@@ -72,11 +82,14 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     for (const [relative, filename] of [
       ['src/App.vue', 'App.mjs'],
       ['src/components/OptionField.vue', 'OptionField.mjs'],
+      ['src/components/CodeEditor.vue', 'CodeEditor.mjs'],
     ]) {
       const source = await readFile(path.join(testRoot, '..', relative), 'utf8');
       const { descriptor } = parse(source);
       const compiled = compileScript(descriptor, { id: filename, inlineTemplate: true })
         .content.replaceAll('./components/OptionField.vue', './OptionField.mjs')
+        .replaceAll('./components/CodeEditor.vue', './CodeEditor.mjs')
+        .replaceAll('../lib/code-editor.js', '../../src/lib/code-editor.js')
         .replaceAll('./lib/', '../../src/lib/');
       await writeFile(path.join(scratch, filename), compiled);
     }
@@ -167,7 +180,8 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     button('预览配置').click();
     await settle();
     assert.equal(requests.at(-1).options.headers['X-Key'], 'secret-value');
-    assert.match(root.querySelector('.output-panel pre').textContent, /synthetic/);
+    assert.ok(root.querySelector('.code-editor'));
+    assert.match(root.querySelector('.editor-fallback')?.value || root.querySelector('.cm-content')?.textContent || '', /synthetic/);
     button('恢复全部默认参数').click();
     await settle();
     assert.equal(root.querySelector('.output-panel'), null);
@@ -293,6 +307,75 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     assert.equal(domainRoot.querySelectorAll('#target option').length, 22);
     assert.equal(domainRoot.querySelector('.mobile-engine-address code').textContent, 'api.miaoceo.com');
     assert.equal(requests.length, 2, 'changing the mobile selection does not send subscription requests');
+    // Kernel validation is explicit, sends the exact preview and discards obsolete reports.
+    const domainButton = (text) => [...domainRoot.querySelectorAll('button')].find((b) => b.textContent.trim() === text);
+    const domainInput = async (selector, value) => {
+      const input = domainRoot.querySelector(selector);
+      input.value = value;
+      input.dispatchEvent(new window.Event(input.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
+      await settle();
+    };
+    await domainInput('#sources', 'https://example.com/sub');
+    domainButton('内核校验').click();
+    await settle();
+    assert.equal(requests.length, 2, 'no config is sent until a service is configured');
+    assert.match(domainRoot.textContent, /请先填写内核校验服务地址/);
+    await domainInput('#validator-url', 'https://validator.example');
+    await domainInput('#validator-token', 'validation-secret');
+    domainButton('预览配置').click();
+    await settle();
+    const before = requests.length;
+    domainButton('内核校验').click();
+    await settle();
+    assert.equal(requests.length, before + 1, 'existing preview is reused without re-conversion');
+    assert.deepEqual(JSON.parse(requests.at(-1).options.body), { config: 'proxies:\n - name: synthetic' });
+    assert.equal(requests.at(-1).options.headers.Authorization, 'Bearer validation-secret');
+    const nativeReport = { engine: 'mihomo', mode: 'config-test', version: 'Mihomo test', valid: false, output: 'invalid action' };
+    pendingValidation(Response.json(nativeReport));
+    await settle();
+    assert.match(domainRoot.querySelector('.validation-report.failed').textContent, /invalid action/);
+    // Real CodeMirror, edited-config validation and cache restoration all stay on the client until requested.
+    for (let attempt = 0; attempt < 50 && !domainRoot.querySelector('.cm-editor'); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await settle();
+    }
+    assert.ok(domainRoot.querySelector('.cm-editor'), 'CodeMirror is loaded, not only the textarea fallback');
+    const { EditorView } = await import('@codemirror/view');
+    const codeView = EditorView.findFromDOM(domainRoot.querySelector('.cm-editor'));
+    const editedConfig = 'proxies: []\nrules: ["MATCH,DIRECT"]\n';
+    codeView.dispatch({ changes: { from: 0, to: codeView.state.doc.length, insert: editedConfig } });
+    await settle();
+    assert.equal(domainRoot.querySelector('.validation-report'), null, 'editing invalidates an existing kernel report');
+    domainButton('内核校验').click();
+    await settle();
+    assert.equal(JSON.parse(requests.at(-1).options.body).config, editedConfig, 'the edited YAML reaches the kernel service');
+    pendingValidation(Response.json({ ...nativeReport, valid: true, output: 'test successful' }));
+    await settle();
+    domainButton('保存到记录').click();
+    await settle();
+    const beforeRestore = requests.length;
+    await domainInput('#sources', 'https://example.com/another-source');
+    const latestRestore = domainRoot.querySelector('.history-list button');
+    latestRestore.click();
+    for (let i = 0; i < 4; i++) await settle();
+    assert.equal(requests.length, beforeRestore, 'restoring local history sends no subscription or config to a server');
+    assert.equal(domainRoot.querySelector('#sources').value, 'https://example.com/sub');
+    assert.equal(domainRoot.querySelector('.editor-fallback')?.value || EditorView.findFromDOM(domainRoot.querySelector('.cm-editor')).state.doc.toString(), editedConfig);
+    assert.doesNotMatch(window.localStorage.getItem('subweb-next-conversions-v1'), /validation-secret|secret-value/);
+    await domainInput('#sources', 'https://example.com/new');
+    assert.equal(domainRoot.querySelector('.validation-report'), null);
+    domainButton('内核校验').click();
+    await settle();
+    const signal = requests.at(-1).options.signal;
+    await domainInput('#validator-url', 'https://other-validator.example');
+    assert.equal(signal.aborted, true);
+    pendingValidation(Response.json({ ...nativeReport, valid: true }));
+    await settle();
+    assert.equal(domainRoot.querySelector('.validation-report'), null, 'old service report never becomes current');
+    assert.equal(domainRoot.querySelector('[role="alert"]'), null, 'cancelled request does not show a stale error');
+    await domainInput('#target', 'singbox');
+    assert.equal(domainButton('内核校验'), undefined);
+    assert.equal(domainRoot.querySelector('#validator-token'), null);
   } finally {
     if (app) app.unmount();
     await window.happyDOM.close();

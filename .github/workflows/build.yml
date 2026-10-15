@@ -20,9 +20,59 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - run: npm ci --prefix services/mihomo-validator
+      - name: Get Mihomo alpha for configuration tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download Prerelease-Alpha --repo MetaCubeX/mihomo --pattern 'mihomo-linux-amd64-v1-alpha-*.gz' --output "$RUNNER_TEMP/mihomo.gz"
+          gzip -dc "$RUNNER_TEMP/mihomo.gz" > "$RUNNER_TEMP/mihomo"
+          chmod +x "$RUNNER_TEMP/mihomo"
+      - run: npm run test:validator
+        env:
+          MIHOMO_TEST_BIN: ${{ runner.temp }}/mihomo
       - run: npm run build
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: subweb-next-dist
           path: dist/
           if-no-files-found: error
+
+  validator-image:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: docker/setup-qemu-action@v4.4.0
+      - uses: docker/setup-buildx-action@v4.4.1
+      - uses: docker/login-action@v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build native image for runtime checks
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: services/mihomo-validator
+          platforms: linux/amd64
+          pull: true
+          load: true
+          tags: subweb-validator:smoke
+          cache-from: type=gha,scope=mihomo-validator
+          cache-to: type=gha,mode=max,scope=mihomo-validator
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+      - name: Check alpha kernel in read-only container
+        run: node services/mihomo-validator/container-smoke.mjs
+      - uses: docker/build-push-action@v7.4.0
+        with:
+          context: services/mihomo-validator
+          platforms: linux/amd64,linux/arm64
+          pull: true
+          push: true
+          tags: |
+            lovinyarn/subweb-next-validator:latest
+            lovinyarn/subweb-next-validator:sha-${{ github.sha }}
+          cache-from: type=gha,scope=mihomo-validator
+          cache-to: type=gha,mode=max,scope=mihomo-validator

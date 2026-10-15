@@ -1,0 +1,38 @@
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import assert from 'node:assert/strict';
+
+const name = `subweb-validator-smoke-${randomUUID()}`;
+const docker = (...args) => execFileSync('docker', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const headers = { Authorization: 'Bearer ci-smoke-token', 'Content-Type': 'application/json' };
+try {
+  docker('run', '-d', '--name', name, '--read-only', '--cap-drop', 'ALL', '--pids-limit', '64',
+    '--memory', '512m', '--cpus', '1', '--tmpfs', '/tmp:size=512m,mode=1777',
+    '-p', '127.0.0.1::25501', '-e', 'VALIDATOR_TOKEN=ci-smoke-token', 'subweb-validator:smoke');
+  const port = docker('port', name, '25501/tcp');
+  const url = `http://${port}`;
+  let health;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    try {
+      const response = await fetch(`${url}/health`, { headers, signal: AbortSignal.timeout(1000) });
+      if (response.ok) { health = await response.json(); break; }
+    } catch { /* wait for Node and the alpha binary */ }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  assert.ok(health && /alpha/i.test(health.version), 'container must start with a real alpha kernel');
+  const valid = 'proxies: []\nproxy-groups:\n  - name: Test\n    type: select\n    proxies: [DIRECT]\nrules: ["MATCH,Test"]\n';
+  const invalid = valid + 'dns:\n  enable: true\n  nameserver: [1.1.1.1]\n  enhanced-mode: fake-ip\n  fake-ip-filter-mode: rule\n  fake-ip-filter: ["*"]\n';
+  for (const [config, expected] of [[valid, true], [invalid, false]]) {
+    const response = await fetch(`${url}/validate`, { method: 'POST', headers, body: JSON.stringify({ config }), signal: AbortSignal.timeout(30000) });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.valid, expected, result.output || result.error);
+    if (!expected) assert.match(result.output, /fake-ip-filter|invalid action/);
+  }
+  console.log('Read-only Docker runtime and native validation passed:', health.version);
+} catch (error) {
+  try { console.error(docker('logs', name)); } catch { /* container was not created */ }
+  throw error;
+} finally {
+  try { docker('rm', '-f', name); } catch { /* no container remains */ }
+}

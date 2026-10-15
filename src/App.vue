@@ -1,11 +1,14 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onBeforeUnmount, reactive, ref, watch, nextTick } from 'vue';
 import OptionField from './components/OptionField.vue';
+import CodeEditor from './components/CodeEditor.vue';
 import { PROFILES, SECTIONS, cleanOptions, parametersFor, targetsFor } from './lib/backends.js';
 import { buildConversion, sourceLines } from './lib/converter.js';
 import { copyText, createShortLink, fetchText, readVersion } from './lib/network.js';
 import { templatesFor, templateGroups } from './lib/presets.js';
 import { currentSiteBackend, versionProfile } from './lib/local-backend.js';
+import { supportsMihomoValidation, validateMihomoConfig } from './lib/mihomo-validator.js';
+import { createConversionHistory, HISTORY_KEY } from './lib/conversion-history.js';
 
 const runtime = window.config || {};
 const backends = reactive(
@@ -50,6 +53,15 @@ const toast = ref('');
 const busy = ref('');
 const short = ref(null);
 const output = ref(null);
+const historyStore = createConversionHistory(() => window.localStorage);
+const historyState = ref(historyStore.list());
+const historyOpen = ref(false);
+const historyLabels = { copy: '复制链接', short: '生成短链', preview: '查看配置', download: '下载配置', validate: '内核校验', save: '保存编辑' };
+const validation = ref(null);
+const validatorUrl = ref(runtime.mihomoValidatorUrl || '');
+const validatorToken = ref('');
+const validatorSettings = ref(false);
+let validationController;
 const versions = reactive({});
 const revision = ref(0);
 const providerOpen = ref(false);
@@ -110,6 +122,10 @@ const generated = computed(() => {
 });
 const shortUrl = computed(() => (short.value?.source === generated.value.url ? short.value.url : ''));
 const currentOutput = computed(() => (output.value?.source === generated.value.url ? output.value : null));
+const outputEdited = computed(() => !!currentOutput.value &&
+  (currentOutput.value.editedBase || currentOutput.value.text !== currentOutput.value.originalText));
+const canValidate = computed(() => supportsMihomoValidation(target.value, options));
+const currentValidation = computed(() => validation.value?.source === generated.value.url ? validation.value : null);
 const needsHeaders = computed(() => Object.keys(generated.value.headers).length > 0);
 const description = computed(() => {
   if (profile.value === 'standard') return '源订阅由后端下载并转换，支持自定义规则与策略组。';
@@ -123,6 +139,65 @@ function notify(message) {
   setTimeout(() => {
     if (toast.value === message) toast.value = '';
   }, 3500);
+}
+function rememberConversion(action, text = '', edited = false) {
+  historyState.value = historyStore.save({
+    state: { ...state.value, hasHeaders: needsHeaders.value }, action, configText: text, edited,
+  });
+}
+function editOutput(text) {
+  if (!currentOutput.value || currentOutput.value.diagnostic || currentOutput.value.text === text) return;
+  output.value.text = text;
+  revision.value++;
+  clearValidation();
+}
+function closeOutput() { output.value = null; revision.value++; clearValidation(); }
+function saveEditedOutput() {
+  rememberConversion('save', currentOutput.value.text, outputEdited.value);
+  notify(historyState.value.error || '配置已保存到本地转换记录');
+}
+function downloadText(text) {
+  const format = chosenTarget.value.format;
+  const extension = format === 'YAML' ? 'yaml' : format === 'JSON' ? 'json' : format === 'CONF' ? 'conf' : 'txt';
+  const blobUrl = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+  const anchor = document.createElement('a');
+  anchor.href = blobUrl;
+  anchor.download = options.filename || `subscription.${extension}`;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+}
+async function restoreConversion(record) {
+  if (busy.value) return;
+  const saved = record.state;
+  const match = backends.find((item) => item.value.replace(/\/+$/, '') === saved.backend && item.profile === saved.profile);
+  if (match) selected.value = match.id;
+  else {
+    selected.value = 'custom';
+    customEndpoint.value = saved.backend;
+    await nextTick();
+    customProfile.value = saved.profile;
+  }
+  userSelectedBackend.value = true;
+  await nextTick();
+  target.value = saved.target;
+  await nextTick();
+  for (const key of Object.keys(options)) delete options[key];
+  Object.assign(options, saved.options);
+  sources.value = saved.sources;
+  ver.value = saved.ver;
+  headerValues.value = '';
+  if (saved.config && !templates.value.some((template) => template.value === saved.config)) {
+    configChoice.value = 'custom'; customConfig.value = saved.config;
+  } else configChoice.value = saved.config;
+  await nextTick();
+  if (record.configText) output.value = {
+    source: generated.value.url, text: record.configText, originalText: record.configText,
+    editedBase: record.edited, diagnostic: false,
+  };
+  notify(saved.hasHeaders ? '已恢复参数；请求头密钥未保存，请重新填写' : '已从本地记录恢复');
+}
+function historyChanged(event) {
+  if (event.key === HISTORY_KEY || event.key === null) historyState.value = historyStore.reload();
 }
 function validated(explain = false) {
   error.value = '';
@@ -148,8 +223,11 @@ async function run(name, action) {
 async function copyLink() {
   await run('copy', async () => {
     const req = validated();
+    const requestRevision = revision.value;
     if (Object.keys(req.headers).length) throw new Error('链接无法携带请求头值，请使用预览或下载。');
     await copyText(req.url);
+    if (revision.value !== requestRevision) return;
+    rememberConversion('copy');
     notify('转换链接已复制');
   });
 }
@@ -163,15 +241,19 @@ async function shorten() {
     if (generated.value.url !== req.url || revision.value !== requestRevision) return;
     short.value = { source: req.url, url };
     await copyText(url);
+    if (revision.value !== requestRevision) return;
+    rememberConversion('short');
     notify('短链已生成并复制，有效期 30 天');
   });
 }
 async function requestOutput(diagnostic = false, download = false) {
   await run(diagnostic ? 'diagnose' : download ? 'download' : 'preview', async () => {
     const req = validated(diagnostic);
+    if (diagnostic) clearValidation();
     const original = generated.value.url;
     const requestRevision = revision.value;
-    const { text } = await fetchText(req.url, req.headers);
+    const text = !diagnostic && currentOutput.value && !currentOutput.value.diagnostic
+      ? currentOutput.value.text : (await fetchText(req.url, req.headers)).text;
     let result = text;
     if (diagnostic) {
       try {
@@ -182,21 +264,55 @@ async function requestOutput(diagnostic = false, download = false) {
     }
     if (generated.value.url !== original || revision.value !== requestRevision) return;
     if (download) {
-      const format = chosenTarget.value.format;
-      const extension =
-        format === 'YAML' ? 'yaml' : format === 'JSON' ? 'json' : format === 'CONF' ? 'conf' : 'txt';
-      const blobUrl = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
-      const anchor = document.createElement('a');
-      anchor.href = blobUrl;
-      anchor.download = options.filename || `subscription.${extension}`;
-      anchor.click();
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      downloadText(text);
+      rememberConversion('download', text, outputEdited.value);
       notify('配置已下载');
     } else {
-      output.value = { source: original, text: result, diagnostic };
+      if (diagnostic || !currentOutput.value || currentOutput.value.diagnostic)
+        output.value = { source: original, text: result, originalText: result, diagnostic };
+      if (!diagnostic) rememberConversion('preview', text, outputEdited.value);
     }
   });
 }
+async function checkMihomo() {
+  if (!validatorUrl.value.trim()) {
+    validatorSettings.value = true;
+    error.value = '请先填写内核校验服务地址。';
+    return;
+  }
+  await run('validate', async () => {
+    if (!canValidate.value) throw new Error('内核校验仅支持完整的 Clash / Mihomo YAML 配置。');
+    const req = validated();
+    const requestRevision = revision.value;
+    const service = validatorUrl.value;
+    const token = validatorToken.value;
+    validation.value = null;
+    const controller = new AbortController();
+    validationController = controller;
+    try {
+      const text = currentOutput.value && !currentOutput.value.diagnostic
+        ? currentOutput.value.text : (await fetchText(req.url, req.headers)).text;
+      if (revision.value !== requestRevision || controller.signal.aborted) return;
+      if (!currentOutput.value || currentOutput.value.diagnostic)
+        output.value = { source: req.url, text, originalText: text, diagnostic: false };
+      rememberConversion('validate', text, outputEdited.value);
+      const checkedEdited = outputEdited.value;
+      const result = await validateMihomoConfig(service, text, token, controller.signal);
+      if (revision.value !== requestRevision || controller.signal.aborted) return;
+      validation.value = { ...result, source: req.url, edited: checkedEdited };
+    } catch (error) {
+      if (revision.value !== requestRevision || controller.signal.aborted) return;
+      throw error;
+    } finally {
+      if (validationController === controller) validationController = null;
+    }
+  });
+}
+function clearValidation() {
+  validationController?.abort();
+  validation.value = null;
+}
+watch([validatorUrl, validatorToken], () => { revision.value++; clearValidation(); error.value = ''; });
 function selectBackend(id) {
   userSelectedBackend.value = true;
   selected.value = id;
@@ -283,6 +399,7 @@ watch(
     error.value = '';
     short.value = null;
     output.value = null;
+    clearValidation();
   },
   { deep: true },
 );
@@ -298,7 +415,8 @@ watch(
   },
   { immediate: true },
 );
-onMounted(() => checkVersions(true));
+onMounted(() => { checkVersions(true); window.addEventListener('storage', historyChanged); });
+onBeforeUnmount(() => { clearValidation(); window.removeEventListener('storage', historyChanged); });
 </script>
 
 <template>
@@ -695,8 +813,26 @@ onMounted(() => checkVersions(true));
                 >
                   {{ busy === 'diagnose' ? '诊断中…' : '转换诊断' }}
                 </button>
+                <button v-if="canValidate" class="text-button" :disabled="!!busy || !generated.url" @click="checkMihomo">
+                  {{ busy === 'validate' ? '校验中…' : '内核校验' }}
+                </button>
               </div>
-              <p class="result-footnote">面板不保存订阅和密钥。短链服务会保存生成链接，用于后续跳转。</p>
+              <div v-if="canValidate" class="validator-section">
+                <details class="validator-settings" :open="validatorSettings" @toggle="validatorSettings = $event.target.open">
+                  <summary>校验服务设置</summary>
+                  <label for="validator-url">服务地址<input id="validator-url" v-model="validatorUrl" type="url" placeholder="http://127.0.0.1:25501" /></label>
+                  <label for="validator-token">访问令牌（如服务需要）<input id="validator-token" v-model="validatorToken" type="password" autocomplete="off" placeholder="仅在本次页面中使用" /></label>
+                  <p class="field-help">校验会将完整配置发送到此服务，可能包含订阅地址与节点密钥。请使用你信任的服务；HTTPS 页面请配套 HTTPS 校验地址。</p>
+                </details>
+                <section v-if="currentValidation" class="validation-report" :class="{ failed: !currentValidation.valid }" role="status" aria-live="polite">
+                  <strong>{{ currentValidation.valid ? 'Mihomo 配置校验通过' : 'Mihomo 配置校验未通过' }}</strong>
+                  <span v-if="currentValidation.edited" class="small-badge">本地编辑内容</span>
+                  <p>{{ currentValidation.version }}</p>
+                  <pre v-if="currentValidation.output">{{ currentValidation.output }}</pre>
+                </section>
+                <p class="field-help validation-scope">使用 mihomo -t 检查配置解析；不测试节点连通性、端口占用或客户端 DNS 覆写。</p>
+              </div>
+              <p class="result-footnote">转换记录仅保存在当前浏览器，可随时清空。短链服务会保存生成链接，用于后续跳转。</p>
             </section>
           </div>
           <section class="context-card" id="about">
@@ -716,12 +852,32 @@ onMounted(() => checkVersions(true));
       <div v-if="currentOutput" class="output-stage">
         <section class="panel output-panel">
           <div class="panel-heading">
-            <h2>{{ currentOutput.diagnostic ? '转换诊断 · JSON' : '配置预览' }}</h2>
-            <button class="text-button" @click="output = null">关闭 ×</button>
+            <h2>{{ currentOutput.diagnostic ? '转换诊断 · JSON' : '转换后配置' }}<span v-if="!currentOutput.diagnostic && outputEdited" class="small-badge">已本地编辑</span></h2>
+            <button class="text-button" @click="closeOutput">关闭 ×</button>
           </div>
-          <pre>{{ currentOutput.text }}</pre>
+          <div v-if="!currentOutput.diagnostic" class="output-actions">
+            <button class="text-button" @click="run('copy-config', async () => { await copyText(currentOutput.text); notify('配置内容已复制'); })">复制配置</button>
+            <button class="text-button" :disabled="!!busy" @click="downloadText(currentOutput.text); rememberConversion('download', currentOutput.text, outputEdited)">下载当前内容</button>
+            <button class="text-button" :disabled="!!busy" @click="saveEditedOutput">保存到记录</button>
+            <button v-if="canValidate" class="text-button" :disabled="!!busy" @click="checkMihomo">{{ busy === 'validate' ? '校验中…' : '校验当前内容' }}</button>
+            <button class="text-button" :disabled="currentOutput.text === currentOutput.originalText" @click="editOutput(currentOutput.originalText)">恢复载入内容</button>
+          </div>
+          <p v-if="!currentOutput.diagnostic" class="field-help editor-note">可直接查看和编辑生成结果。本地修改用于复制、下载及内核校验，不会改变订阅链接或转换后端。</p>
+          <CodeEditor :model-value="currentOutput.text" :language="currentOutput.diagnostic ? 'JSON' : chosenTarget.format" :theme="theme" :read-only="currentOutput.diagnostic" @update:model-value="editOutput" />
         </section>
       </div>
+      <details class="conversion-history panel" :open="historyOpen" @toggle="historyOpen = $event.target.open">
+        <summary>转换记录 <span class="small-badge">{{ historyState.items.length }}</span><span class="muted">仅当前浏览器</span></summary>
+        <div class="history-heading"><p class="field-help">不上传云端，最多保留 20 条。记录含订阅参数；请求头密钥和校验服务令牌不保存。</p><button class="text-button" :disabled="!historyState.items.length" @click="historyState = historyStore.clear()">清空记录</button></div>
+        <p v-if="historyState.error" class="field-help">{{ historyState.error }}</p>
+        <p v-if="!historyState.items.length" class="history-empty muted">还没有转换记录。</p>
+        <ol v-else class="history-list">
+          <li v-for="record in historyState.items" :key="record.id">
+            <div><strong>{{ record.state.profile === 'extended' ? 'Extended' : 'subconverter' }} · {{ record.state.target }}</strong><span>{{ historyLabels[record.action] }} · {{ new Date(record.time).toLocaleString() }} · {{ sourceLines(record.state.sources).length }} 条来源<span v-if="record.edited"> · 已编辑配置</span><span v-if="record.contentOmitted"> · 大配置仅保留参数</span></span></div>
+            <div><button class="text-button" :disabled="!!busy" @click="restoreConversion(record)">恢复</button><button class="text-button" @click="historyState = historyStore.remove(record.id)">删除</button></div>
+          </li>
+        </ol>
+      </details>
     </main>
     <footer>
       <span>Subweb Next <span class="footer-dot">·</span> 订阅转换工作台</span
