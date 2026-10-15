@@ -757,31 +757,9 @@ summary {
   line-height: 1.9;
   margin-top: 15px;
 }
-.context-card {
-  border: 1px dashed var(--line);
-  border-radius: 12px;
-  background: transparent;
-  padding: 20px;
-}
-.context-card .eyebrow {
-  font-size: 9px;
-  letter-spacing: 0.8px;
-}
-.context-card strong {
-  display: block;
-  margin-top: 10px;
-  font-size: 12px;
-  font-weight: 500;
-}
-.context-card p {
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.9;
-  margin: 9px 0 14px;
-}
-.context-card a {
-  font-size: 10px;
-}
+.backend-info { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px; font-size: 10px; }
+.backend-info summary { color: var(--muted); cursor: pointer; }
+.backend-info p { color: var(--muted); line-height: 1.8; margin: 8px 0; }
 .short-result {
   border: 1px solid var(--line);
   border-radius: 9px;
@@ -849,7 +827,7 @@ summary {
 .code-mirror-host { min-width: 0; }
 .code-mirror-host .cm-editor { max-height: 600px; }
 .editor-fallback { display: block; width: 100%; min-height: 320px; height: 420px; border: 0; border-radius: 0; font-size: 12px; line-height: 1.8; }
-.conversion-history { margin-top: 22px; }
+.conversion-history { margin: 0; }
 .conversion-history > summary { cursor: pointer; font-size: 13px; font-weight: 600; }
 .conversion-history > summary .muted { font-size: 10px; margin-left: 12px; font-weight: 400; }
 .history-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 14px 0; }
@@ -1040,9 +1018,6 @@ footer {
   }
   .result-column {
     position: static;
-  }
-  .context-card {
-    display: none;
   }
   .options-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

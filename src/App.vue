@@ -805,6 +805,18 @@ onBeforeUnmount(() => {
               </div>
             </section>
           </div>
+          <details class="conversion-history panel" :open="historyOpen" @toggle="historyOpen = $event.target.open">
+            <summary>转换记录 <span class="small-badge">{{ historyState.items.length }}</span><span class="muted">仅当前浏览器</span></summary>
+            <div class="history-heading"><p class="field-help">不上传云端，最多保留 20 条。记录含订阅参数；请求头密钥和校验服务令牌不保存。</p><button class="text-button" :disabled="!historyState.items.length" @click="historyState = historyStore.clear()">清空记录</button></div>
+            <p v-if="historyState.error" class="field-help">{{ historyState.error }}</p>
+            <p v-if="!historyState.items.length" class="history-empty muted">还没有转换记录。</p>
+            <ol v-else class="history-list">
+              <li v-for="record in historyState.items" :key="record.id">
+                <div><strong>{{ record.state.profile === 'extended' ? 'Extended' : 'subconverter' }} · {{ record.state.target }}</strong><span>{{ historyLabels[record.action] }} · {{ new Date(record.time).toLocaleString() }} · {{ sourceLines(record.state.sources).length }} 条来源<span v-if="record.edited"> · 已编辑配置</span><span v-if="record.contentOmitted"> · 大配置仅保留参数</span></span></div>
+                <div><button class="text-button" :disabled="!!busy" @click="restoreConversion(record)">恢复</button><button class="text-button" @click="historyState = historyStore.remove(record.id)">删除</button></div>
+              </li>
+            </ol>
+          </details>
         </div>
 
         <div class="result-column">
@@ -913,20 +925,13 @@ onBeforeUnmount(() => {
                 <p class="field-help validation-scope">使用 mihomo -t 检查配置解析；不测试节点连通性、端口占用或客户端 DNS 覆写。</p>
               </div>
               <p class="result-footnote">转换记录仅保存在当前浏览器，可随时清空。短链服务会保存生成链接，用于后续跳转。</p>
+              <details class="backend-info">
+                <summary>后端能力与文档</summary>
+                <p>{{ profile === 'extended' ? '22 种输出格式；支持 Provider 命名、独立间隔和 explain 诊断。' : '16 种输出格式；支持源 UA、Age 解密、自定义策略组和规则集。' }}</p>
+                <a :href="PROFILES[profile].source" target="_blank" rel="noreferrer">查看后端文档 ↗</a>
+              </details>
             </section>
           </div>
-          <section class="context-card" id="about">
-            <span class="eyebrow">当前能力</span
-            ><strong>{{ profile === 'extended' ? '为远程订阅而设计' : '保留完整转换控制' }}</strong>
-            <p>
-              {{
-                profile === 'extended'
-                  ? '22 种输出格式；支持 Provider 命名、独立间隔和 explain 诊断。'
-                  : '16 种输出格式；支持源 UA、Age 解密、自定义策略组和规则集。'
-              }}
-            </p>
-            <a :href="PROFILES[profile].source" target="_blank" rel="noreferrer">查看后端文档 ↗</a>
-          </section>
         </div>
       </div>
       <ConfigDialog v-if="currentOutput && outputOpen" :title="currentOutput.diagnostic ? '转换诊断 · JSON' : '转换后配置'" @close="closeOutput" @resize="configEditor?.measure()">
@@ -949,18 +954,6 @@ onBeforeUnmount(() => {
             <button v-if="currentValidation?.output" type="button" class="text-button" :aria-expanded="dialogLogOpen" @click="dialogLogOpen = !dialogLogOpen">{{ dialogLogOpen ? '收起日志' : '查看日志' }}</button>
           </template>
       </ConfigDialog>
-      <details class="conversion-history panel" :open="historyOpen" @toggle="historyOpen = $event.target.open">
-        <summary>转换记录 <span class="small-badge">{{ historyState.items.length }}</span><span class="muted">仅当前浏览器</span></summary>
-        <div class="history-heading"><p class="field-help">不上传云端，最多保留 20 条。记录含订阅参数；请求头密钥和校验服务令牌不保存。</p><button class="text-button" :disabled="!historyState.items.length" @click="historyState = historyStore.clear()">清空记录</button></div>
-        <p v-if="historyState.error" class="field-help">{{ historyState.error }}</p>
-        <p v-if="!historyState.items.length" class="history-empty muted">还没有转换记录。</p>
-        <ol v-else class="history-list">
-          <li v-for="record in historyState.items" :key="record.id">
-            <div><strong>{{ record.state.profile === 'extended' ? 'Extended' : 'subconverter' }} · {{ record.state.target }}</strong><span>{{ historyLabels[record.action] }} · {{ new Date(record.time).toLocaleString() }} · {{ sourceLines(record.state.sources).length }} 条来源<span v-if="record.edited"> · 已编辑配置</span><span v-if="record.contentOmitted"> · 大配置仅保留参数</span></span></div>
-            <div><button class="text-button" :disabled="!!busy" @click="restoreConversion(record)">恢复</button><button class="text-button" @click="historyState = historyStore.remove(record.id)">删除</button></div>
-          </li>
-        </ol>
-      </details>
     </main>
     <footer>
       <span>Subweb Next <span class="footer-dot">·</span> 订阅转换工作台</span
