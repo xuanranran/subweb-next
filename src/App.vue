@@ -44,64 +44,10 @@ const options = reactive({});
 const headerValues = ref('');
 const advanced = ref(false);
 const activeSection = ref('output');
-const themePreference = ref('auto');
-const themePicker = ref(null);
-const themePanel = ref(null);
-const themePanelOpen = ref(false);
-const themePanelPosition = ref({});
-const themeModes = [{ value: 'light', label: '亮色' }, { value: 'dark', label: '暗色' }, { value: 'auto', label: '自动' }];
-const themeDescription = computed(() => themePreference.value === 'auto'
-  ? '跟随浏览器或系统的明暗偏好，变化时自动切换。'
-  : `保持${themePreference.value === 'light' ? '亮色' : '暗色'}显示，不受系统切换影响。`);
-function placeThemePanel() {
-  if (!themePanelOpen.value || !themePanel.value || !themePicker.value) return;
-  const button = themePicker.value.querySelector('.theme-trigger').getBoundingClientRect();
-  const box = themePanel.value.getBoundingClientRect();
-  const gutter = 8;
-  const horizontal = Math.max(gutter, Math.min(button.right - box.width, window.innerWidth - box.width - gutter));
-  const below = button.bottom + gutter;
-  const vertical = below + box.height <= window.innerHeight - gutter ? below : Math.max(gutter, button.top - box.height - gutter);
-  themePanelPosition.value = { left: `${horizontal}px`, top: `${vertical}px` };
-}
-async function toggleThemePanel() {
-  if (themePanelOpen.value) { closeThemePanel(); return; }
-  themePanelOpen.value = true;
-  await nextTick();
-  placeThemePanel();
-}
-function closeThemePanel(restoreFocus = false) {
-  themePanelOpen.value = false;
-  if (restoreFocus) themePicker.value?.querySelector('.theme-trigger')?.focus();
-}
-function chooseTheme(value) {
-  themePreference.value = value;
-}
-function themeStored(event) {
-  if (event.key !== null && event.key !== 'subweb-theme-mode') return;
-  try {
-    const value = window.localStorage.getItem('subweb-theme-mode');
-    themePreference.value = ['light', 'dark', 'auto'].includes(value) ? value : 'auto';
-  } catch { /* keep the in-memory mode if storage becomes unavailable */ }
-}
-function themeOutside(event) {
-  if (themePanelOpen.value && !themePicker.value?.contains(event.target)) closeThemePanel();
-}
-function themeKeydown(event) {
-  if (event.key === 'Escape' && themePanelOpen.value) {
-    event.preventDefault();
-    closeThemePanel(true);
-  }
-}
 const themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
 const systemDark = ref(themeMedia.matches);
-const theme = computed(() => themePreference.value === 'auto' ? (systemDark.value ? 'dark' : 'light') : themePreference.value);
+const theme = computed(() => systemDark.value ? 'dark' : 'light');
 function systemThemeChanged(event) { systemDark.value = event.matches; }
-try {
-  const saved = window.localStorage.getItem('subweb-theme-mode');
-  if (['auto', 'light', 'dark'].includes(saved)) themePreference.value = saved;
-} catch {
-  /* unavailable browser storage */
-}
 const error = ref('');
 const toast = ref('');
 const busy = ref('');
@@ -493,36 +439,15 @@ watch(
   },
   { immediate: true },
 );
-watch(
-  themePreference,
-  (value) => {
-    try {
-      window.localStorage.setItem('subweb-theme-mode', value);
-    } catch {
-      /* optional preference */
-    }
-  },
-  { immediate: true },
-);
 onMounted(() => {
   checkVersions(true);
   window.addEventListener('storage', historyChanged);
   themeMedia.addEventListener('change', systemThemeChanged);
-  document.addEventListener('pointerdown', themeOutside);
-  document.addEventListener('keydown', themeKeydown);
-  window.addEventListener('resize', placeThemePanel);
-  window.addEventListener('scroll', placeThemePanel, true);
-  window.addEventListener('storage', themeStored);
 });
 onBeforeUnmount(() => {
   clearValidation();
   window.removeEventListener('storage', historyChanged);
   themeMedia.removeEventListener('change', systemThemeChanged);
-  document.removeEventListener('pointerdown', themeOutside);
-  document.removeEventListener('keydown', themeKeydown);
-  window.removeEventListener('resize', placeThemePanel);
-  window.removeEventListener('scroll', placeThemePanel, true);
-  window.removeEventListener('storage', themeStored);
 });
 </script>
 
@@ -545,28 +470,6 @@ onBeforeUnmount(() => {
         <div class="top-actions">
           <a :href="PROFILES[profile].source" target="_blank" rel="noreferrer">后端源码 ↗</a
           >
-          <div ref="themePicker" class="theme-picker" @focusout="!$event.currentTarget.contains($event.relatedTarget) && closeThemePanel()">
-            <button type="button" class="icon-button theme-trigger" :aria-label="'主题设置，当前' + themeModes.find(mode => mode.value === themePreference).label" title="显示模式" :aria-expanded="themePanelOpen" aria-haspopup="dialog" aria-controls="theme-panel" @click="toggleThemePanel">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="8.5" />
-                <path d="M12 3.5a8.5 8.5 0 0 1 0 17Z" fill="currentColor" stroke="none" />
-              </svg>
-            </button>
-            <div v-if="themePanelOpen" ref="themePanel" id="theme-panel" class="theme-panel" role="dialog" aria-label="显示模式" :style="themePanelPosition">
-              <div class="theme-panel-heading"><strong>显示模式</strong><button type="button" class="text-button" aria-label="关闭主题设置" @click="closeThemePanel(true)">×</button></div>
-              <div class="theme-segments" role="group" aria-label="主题模式">
-                <button v-for="mode in themeModes" :key="mode.value" type="button" :data-mode="mode.value" :aria-pressed="themePreference === mode.value" @click="chooseTheme(mode.value)">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <template v-if="mode.value === 'light'"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></template>
-                    <path v-else-if="mode.value === 'dark'" d="M20 14.2A8 8 0 0 1 9.8 4a8.2 8.2 0 1 0 10.2 10.2Z" />
-                    <template v-else><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8m-4-4v4" /></template>
-                  </svg>
-                  {{ mode.label }}
-                </button>
-              </div>
-              <p class="theme-description">{{ themeDescription }}</p>
-            </div>
-          </div>
         </div>
       </header>
     </div>
