@@ -5,16 +5,16 @@
   font-family: var(--font-family);
   font-synthesis: none;
   color-scheme: light;
-  --bg: #f5f6f8;
-  --panel: #ffffff;
-  --text: #202530;
-  --muted: #626c7c;
-  --line: #e5e8ef;
-  --input: #f8f9fc;
-  --accent: #3865ea;
+  --bg: #ffffff;
+  --panel: #f2f2f2;
+  --text: #202020;
+  --muted: #606060;
+  --line: #d4d4d4;
+  --input: #fafafa;
+  --accent: #315bd6;
   --accent-hover: #2953ce;
-  --tint: #eef3ff;
-  --shadow: 0 3px 14px #182a4905;
+  --tint: #e6ebf8;
+  --shadow: 0 3px 14px #00000005;
   background: var(--bg);
   color: var(--text);
 }

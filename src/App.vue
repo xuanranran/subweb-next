@@ -435,7 +435,7 @@ watch(
   theme,
   (value) => {
     document.documentElement.dataset.theme = value;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', value === 'dark' ? '#000000' : '#f5f6f8');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', value === 'dark' ? '#000000' : '#ffffff');
   },
   { immediate: true },
 );
