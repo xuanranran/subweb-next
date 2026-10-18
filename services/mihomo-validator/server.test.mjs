@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { request } from 'node:http';
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -119,6 +120,64 @@ test('bundled panel serves assets and uses an origin-bound session without expos
     assert.equal((await post({ Origin: 'https://evil.example' })).status, 403);
     assert.equal((await fetch(`${url}/health`, { headers })).status, 401);
     assert.equal((await post({ Cookie: '', Origin: 'https://other.example', Authorization: 'Bearer fixture-secret' })).status, 200);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('tunnel and LAN panels load Origin-bearing assets and validate with their own addresses and cookies', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'subweb-tunnel-test-'));
+  await mkdir(path.join(directory, 'conf'));
+  await writeFile(path.join(directory, 'index.html'), '<html>Subweb panel</html>');
+  await writeFile(path.join(directory, 'conf/config.js'), 'window.config = {};');
+  await writeFile(path.join(directory, 'app.js'), 'window.panelLoaded = true;');
+  await writeFile(path.join(directory, 'app.css'), 'body { color: black; }');
+  const appOrigin = 'http://192.168.2.190:25550';
+  const publicOrigin = 'https://apis.miaoceo.com';
+  const server = createValidatorServer({
+    staticDir: directory, appOrigin, appOrigins: [publicOrigin], token: 'fixture-secret',
+    origins: ['https://external-client.example'], run: async () => report,
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const call = (pathname, host, headers = {}, body) => new Promise((resolve, reject) => {
+    const req = request({ hostname: '127.0.0.1', port: server.address().port, path: pathname,
+      method: body ? 'POST' : 'GET', headers: { Host: host, ...headers } }, (res) => {
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { text += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, text }));
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+  try {
+    for (const origin of [appOrigin, publicOrigin]) {
+      const host = new URL(origin).host;
+      const page = await call('/', host);
+      const cookie = page.headers['set-cookie'][0];
+      assert.equal(page.status, 200);
+      assert.equal(cookie.includes('; Secure'), origin.startsWith('https:'));
+      for (const [pathname, mime] of [['/app.js', 'text/javascript'], ['/app.css', 'text/css']]) {
+        const asset = await call(pathname, host, { Origin: origin });
+        assert.equal(asset.status, 200, 'browser module/style request must not become a JSON 403');
+        assert.ok(asset.headers['content-type'].startsWith(mime));
+      }
+      const runtime = await call('/conf/config.js', host);
+      assert.ok(runtime.text.includes(`"mihomoValidatorUrl":"${origin}"`));
+      assert.doesNotMatch(runtime.text, /fixture-secret/);
+      const headers = { Origin: origin, Cookie: cookie.split(';')[0], 'Content-Type': 'application/json' };
+      const result = await call('/validate', host, headers, JSON.stringify({ config: valid }));
+      assert.equal(result.status, 200);
+      assert.deepEqual(JSON.parse(result.text), report);
+      assert.equal((await call('/validate', host, { ...headers, Cookie: '' }, JSON.stringify({ config: valid }))).status, 401);
+      assert.equal((await call('/app.js', host, { Origin: 'https://evil.example' })).status, 403);
+      assert.equal((await call('/validate', host, { ...headers, Origin: 'https://external-client.example' }, JSON.stringify({ config: valid }))).status, 401);
+    }
+    const spoof = await call('/conf/config.js', 'evil.example', { 'X-Forwarded-Host': 'evil.example', 'X-Forwarded-Proto': 'https' });
+    assert.doesNotMatch(spoof.text, /evil\.example/);
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));

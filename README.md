@@ -26,6 +26,7 @@
 | subconverter          | https://sub.miaoceo.com                       |
 | 本地后端              | 直接访问指定 IP 范围时沿用当前协议、IP 与端口 |
 | 短链 Worker           | https://i.miaoceo.com/short                   |
+| Mihomo 校验服务       | https://apis.miaoceo.com/                     |
 
 两种后端使用独立能力配置，Extended 提供 22 种输出，Standard 提供 16 种输出。页面通过 `/version` 读取在线身份与版本；本地与自定义后端自动识别类型，无须手动选择。
 
@@ -103,7 +104,7 @@ Extended 的 Clash / Mihomo 与 ClashR 配置列表新增 Aethersailor 分组，
 
 结果区提供“内核校验”，适用于两个转换后端的完整 Clash / Mihomo、ClashR YAML 输出。先填写独立校验服务地址，必要时输入服务令牌，然后点击校验；面板提交当前预览的原始 YAML，并显示实际内核版本和 `mihomo -t` 返回的结果。若尚无预览，点击后先获取转换结果。更改转换条件、请求头或校验服务后，旧报告作废；输入过程中不会自动提交配置。
 
-前端继续作为纯静态项目部署，校验服务独立运行。默认未配置服务，不自动连接第三方服务。可在 `public/conf/config.js` 的 `mihomoValidatorUrl` 设置根地址；令牌仅在页面内存中输入。部署、地理数据库和测试步骤见 [校验服务说明](services/mihomo-validator/README.md)。
+前端继续作为纯静态项目部署，校验服务独立运行。默认校验地址为 `https://apis.miaoceo.com/`，只有主动点击校验才提交配置；可在 `public/conf/config.js` 的 `mihomoValidatorUrl` 修改根地址。Docker 一体化面板按已配置的页面来源选择同源地址，公网域名使用 HTTPS，直接从局域网 IP 打开时沿用本地地址。令牌仅在页面内存中输入。部署、地理数据库和测试步骤见 [校验服务说明](services/mihomo-validator/README.md)。
 
 `mihomo -t` 检查内核能否解析配置，能发现 DNS 过滤语法等错误；它不会实际启动监听或测试节点，也无法看到客户端后来追加的覆写。校验服务使用官方 Mihomo alpha，结果展示实际提交版本；地理数据库应尽量与客户端一致。GitHub Actions 运行前端和 alpha 原生配置测试，通过后构建、发布校验服务镜像。
 

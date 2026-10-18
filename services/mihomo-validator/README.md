@@ -40,7 +40,9 @@ VALIDATOR_APP_ORIGIN=http://192.168.2.190:25550
 SUBWEB_LOCAL_BACKEND_URL=http://192.168.2.190:25500
 ```
 
-同端口面板自动填入校验地址，浏览器使用 HttpOnly、SameSite=Strict 会话 Cookie 调用校验接口，无须手填令牌。Cookie 只对 `VALIDATOR_APP_ORIGIN` 的同源校验 POST 生效，页面刷新即可取得新会话。此模式下，能访问局域网面板的用户即可提交校验；其他来源的 API 调用仍需 Bearer 令牌。令牌不会注入页面或静态配置。
+通过隧道或反向代理同时提供公网面板时，额外设置 `VALIDATOR_APP_ORIGINS=https://apis.miaoceo.com`，多个地址以英文逗号分隔。所有面板来源自动加入来源白名单，避免浏览器加载带 `Origin` 的 JS/CSS 时收到 403。服务根据请求 Host 在明确配置的面板地址中选择校验地址：公网使用 HTTPS 域名，局域网保留 HTTP IP，不会把公网用户引向内网 HTTP。隧道应保留原始 Host，不读取任意转发头来推断可信来源。
+
+同端口面板自动填入校验地址，浏览器使用 HttpOnly、SameSite=Strict 会话 Cookie 调用校验接口，无须手填令牌。Cookie 只对 `VALIDATOR_APP_ORIGIN` 及 `VALIDATOR_APP_ORIGINS` 中面板来源的校验 POST 生效，HTTPS 面板还带有 Secure 属性，页面刷新即可取得新会话。此模式下，能访问这些面板的用户即可提交校验；其他来源的 API 调用仍需 Bearer 令牌。令牌不会注入页面或静态配置。
 
 直接拉取 GitHub Actions 构建好的镜像：
 

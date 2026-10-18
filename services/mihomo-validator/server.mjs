@@ -26,7 +26,7 @@ function equalSecret(received, expected) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-async function servePanel(req, res, settings, session) {
+async function servePanel(req, res, settings, session, appOrigins) {
   if (!settings.staticDir || !['GET', 'HEAD'].includes(req.method)) return false;
   let pathname;
   try { pathname = decodeURIComponent(req.url.split('?')[0]); } catch { return false; }
@@ -41,14 +41,17 @@ async function servePanel(req, res, settings, session) {
     if (!file.startsWith(root + path.sep)) return false;
     body = await readFile(file);
   } catch { return false; }
-  if (pathname === '/conf/config.js' && settings.appOrigin) {
+  // A tunnel preserves the public Host. Select only explicitly configured panel origins;
+  // never reflect arbitrary Host or forwarded headers into public runtime settings.
+  const appOrigin = [...appOrigins].find((origin) => new URL(origin).host === req.headers.host?.toLowerCase()) || settings.appOrigin;
+  if (pathname === '/conf/config.js' && appOrigin) {
     // Public deployment addresses only. The API token never enters static JavaScript.
-    const overrides = { mihomoValidatorUrl: settings.appOrigin };
+    const overrides = { mihomoValidatorUrl: appOrigin };
     if (settings.localBackendUrl) overrides.localBackendUrl = settings.localBackendUrl;
     body = Buffer.concat([body, Buffer.from(`\nObject.assign(window.config, ${JSON.stringify(overrides)});\n`)]);
   }
-  if (relative === 'index.html' && settings.appOrigin) {
-    const secure = settings.appOrigin.startsWith('https:') ? '; Secure' : '';
+  if (relative === 'index.html' && appOrigin) {
+    const secure = appOrigin.startsWith('https:') ? '; Secure' : '';
     res.setHeader('Set-Cookie', `subweb_session=${session}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${secure}`);
   }
   res.setHeader('Content-Type', MIME[path.extname(relative)]);
@@ -172,8 +175,9 @@ export async function testConfig(text, settings) {
 
 export function createValidatorServer(settings) {
   let active = false;
+  const appOrigins = new Set([settings.appOrigin, ...(settings.appOrigins || [])].filter(Boolean));
   const origins = new Set(settings.origins || []);
-  if (settings.appOrigin) origins.add(settings.appOrigin);
+  for (const origin of appOrigins) origins.add(origin);
   const session = randomBytes(32).toString('hex');
   const server = createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -191,11 +195,11 @@ export function createValidatorServer(settings) {
         res.setHeader('Access-Control-Allow-Private-Network', 'true');
     }
     if (req.method === 'OPTIONS') return send(204, {});
-    if (await servePanel(req, res, settings, session)) return;
+    if (await servePanel(req, res, settings, session, appOrigins)) return;
     // Only the bundled panel can use its HttpOnly session. Cross-origin clients still need Bearer auth.
     const cookie = req.headers.cookie?.split(';').map((part) => part.trim())
       .find((part) => part.startsWith('subweb_session='))?.slice('subweb_session='.length);
-    const panelRequest = settings.staticDir && settings.appOrigin && origin === settings.appOrigin &&
+    const panelRequest = settings.staticDir && appOrigins.has(origin) &&
       req.method === 'POST' && req.url === '/validate' && equalSecret(cookie, session);
     if (settings.token && !panelRequest) {
       if (!equalSecret(req.headers.authorization, `Bearer ${settings.token}`))
@@ -247,6 +251,7 @@ export async function start() {
     binary, version, token, geodataDir: process.env.MIHOMO_GEODATA_DIR,
     staticDir: process.env.VALIDATOR_STATIC_DIR,
     appOrigin: process.env.VALIDATOR_APP_ORIGIN ? new URL(process.env.VALIDATOR_APP_ORIGIN).origin : undefined,
+    appOrigins: (process.env.VALIDATOR_APP_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean).map((v) => new URL(v).origin),
     localBackendUrl: process.env.SUBWEB_LOCAL_BACKEND_URL,
     origins: (process.env.VALIDATOR_ORIGINS || 'http://127.0.0.1:5173').split(',').map((v) => v.trim()).filter(Boolean),
   });
