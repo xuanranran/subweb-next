@@ -117,6 +117,7 @@ const state = computed(() => ({
   sources: sources.value,
   config: config.value,
   ver: ver.value,
+  preset: selectedTemplate.value,
   options: { ...options },
   headerValues: headerValues.value,
 }));
@@ -681,7 +682,7 @@ onBeforeUnmount(() => {
               </label>
               <label v-if="target === 'surge'" class="spaced"
                 >Surge 版本<select v-model="ver">
-                  <option value="">后端默认 · {{ PROFILES[profile].surgeDefault }}</option>
+                  <option value="">{{ selectedTemplate?.surgeVersion ? '模板默认' : '后端默认' }} · {{ selectedTemplate?.surgeVersion || PROFILES[profile].surgeDefault }}</option>
                   <option v-for="v in [2, 3, 4, 5]" :key="v" :value="String(v)">Surge {{ v }}</option>
                 </select></label
               >

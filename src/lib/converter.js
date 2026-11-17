@@ -172,6 +172,7 @@ export function buildConversion({
   sources,
   config = '',
   ver = '',
+  preset = null,
   options = {},
   headerValues = '',
   explain = false,
@@ -191,9 +192,10 @@ export function buildConversion({
     if (!['http:', 'https:'].includes(template.protocol)) throw new Error('远程配置只支持 HTTP(S)。');
     url.searchParams.set('config', config.trim());
   }
-  if (target === 'surge' && ver !== '') {
-    if (!['2', '3', '4', '5'].includes(String(ver))) throw new Error('Surge 版本须为 2～5。');
-    url.searchParams.set('ver', String(ver));
+  const surgeVersion = ver || preset?.surgeVersion || '';
+  if (target === 'surge' && surgeVersion !== '') {
+    if (!['2', '3', '4', '5'].includes(String(surgeVersion))) throw new Error('Surge 版本须为 2～5。');
+    url.searchParams.set('ver', String(surgeVersion));
   }
   for (const param of parametersFor(profile, target)) {
     let value = options[param.key];

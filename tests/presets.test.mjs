@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import {
   AETHERSAILOR_PRESETS,
   AETHERSAILOR_SOURCE,
@@ -8,6 +10,50 @@ import {
 } from '../src/lib/presets.js';
 import { parseAethersailorCatalog } from '../scripts/template-catalog.mjs';
 import { buildConversion } from '../src/lib/converter.js';
+
+function configuredPresets() {
+  const context = { window: {} };
+  vm.runInNewContext(readFileSync(new URL('../public/conf/config.js', import.meta.url), 'utf8'), context);
+  return context.window.config.remoteConfigOptions;
+}
+
+test('the personal native Smart preset is only offered to Extended Surge', () => {
+  const configured = configuredPresets();
+  const preset = configured.find(p => p.surgeVersion === '5');
+  assert.ok(preset);
+  assert.equal(preset.value, 'https://raw.githubusercontent.com/xuanranran/Clash/main/Surge/SurgeRule.ini');
+  assert.ok(templatesFor(configured, 'extended', 'surge', false).some(p => p.value === preset.value));
+  for (const [profile, target] of [['standard', 'surge'], ['extended', 'surfboard'], ['extended', 'stash']]) {
+    assert.ok(!templatesFor(configured, profile, target, false).some(p => p.value === preset.value));
+  }
+  assert.ok(templatesFor(configured, 'extended', 'surfboard', false).length > 0);
+});
+
+test('native Surge preset requests format 5 while preserving an explicit version choice', () => {
+  const preset = configuredPresets().find(p => p.surgeVersion === '5');
+  const state = {
+    backend: 'https://api.example.com', profile: 'extended', target: 'surge',
+    sources: 'trojan://test-password@198.51.100.1:443#HK-Test',
+    config: preset.value, preset,
+  };
+  assert.equal(new URL(buildConversion(state).url).searchParams.get('ver'), '5');
+  assert.equal(new URL(buildConversion({ ...state, ver: '4' }).url).searchParams.get('ver'), '4');
+  assert.equal(new URL(buildConversion({ ...state, target: 'stash' }).url).searchParams.has('ver'), false);
+});
+
+test('automatic-selection template uses raw and is available only for Clash targets', () => {
+  const configured = configuredPresets();
+  const preset = configured.find(p => p.text === 'LovinYarn · 自动选择');
+  assert.equal(preset.value, 'https://raw.githubusercontent.com/xuanranran/Clash/main/Clash/ClashRule_region_optional.ini');
+  for (const profile of ['extended', 'standard']) {
+    for (const target of ['clash', 'clashr']) {
+      assert.ok(templatesFor(configured, profile, target, false).some(p => p.value === preset.value));
+    }
+    for (const target of ['surge', 'stash', 'surfboard']) {
+      assert.ok(!templatesFor(configured, profile, target, false).some(p => p.value === preset.value));
+    }
+  }
+});
 
 test('snapshot contains exactly the eight Aethersailor variants with original URLs', () => {
   assert.equal(AETHERSAILOR_PRESETS.length, 8);
