@@ -3,6 +3,8 @@ import { computed, onMounted, onBeforeUnmount, reactive, ref, watch, nextTick } 
 import OptionField from './components/OptionField.vue';
 import CodeEditor from './components/CodeEditor.vue';
 import ConfigDialog from './components/ConfigDialog.vue';
+import SubscriptionInfo from './components/SubscriptionInfo.vue';
+import FloatingPanel from './components/FloatingPanel.vue';
 import { PROFILES, SECTIONS, cleanOptions, parametersFor, targetsFor } from './lib/backends.js';
 import { buildConversion, sourceLines } from './lib/converter.js';
 import { copyText, createShortLink, fetchText, readVersion } from './lib/network.js';
@@ -57,7 +59,7 @@ const outputOpen = ref(false);
 const dialogLogOpen = ref(false);
 const historyStore = createConversionHistory(() => window.localStorage);
 const historyState = ref(historyStore.list());
-const historyOpen = ref(false);
+const floatingPanel = ref('');
 const historyLabels = { copy: '复制链接', short: '生成短链', preview: '查看配置', download: '下载配置', validate: '内核校验', save: '保存编辑' };
 const validation = ref(null);
 const configEditor = ref(null);
@@ -220,6 +222,10 @@ async function restoreConversion(record) {
 }
 function historyChanged(event) {
   if (event.key === HISTORY_KEY || event.key === null) historyState.value = historyStore.reload();
+}
+function setFloatingPanel(panel, open) {
+  if (open) floatingPanel.value = panel;
+  else if (floatingPanel.value === panel) floatingPanel.value = '';
 }
 function validated(explain = false) {
   error.value = '';
@@ -601,7 +607,7 @@ onBeforeUnmount(() => {
                 placeholder="粘贴订阅链接或节点，每行一条&#10;https://example.com/subscription&#10;ss://… 或 vmess://…"
               ></textarea>
               <div class="source-footer">
-                <span class="field-help">支持多行或 | 分隔。链接仅在预览、下载或短链时发送。</span
+                <span class="field-help">支持多行或 | 分隔。</span
                 ><button
                   v-if="supportsProvider"
                   class="text-button"
@@ -743,18 +749,6 @@ onBeforeUnmount(() => {
               </div>
             </section>
           </div>
-          <details class="conversion-history panel" :open="historyOpen" @toggle="historyOpen = $event.target.open">
-            <summary>转换记录 <span class="small-badge">{{ historyState.items.length }}</span><span class="muted">仅当前浏览器</span></summary>
-            <div class="history-heading"><p class="field-help">不上传云端，最多保留 20 条。记录含订阅参数；请求头密钥和校验服务令牌不保存。</p><button class="text-button" :disabled="!historyState.items.length" @click="historyState = historyStore.clear()">清空记录</button></div>
-            <p v-if="historyState.error" class="field-help">{{ historyState.error }}</p>
-            <p v-if="!historyState.items.length" class="history-empty muted">还没有转换记录。</p>
-            <ol v-else class="history-list">
-              <li v-for="record in historyState.items" :key="record.id">
-                <div><strong>{{ record.state.profile === 'extended' ? 'Extended' : 'subconverter' }} · {{ record.state.target }}</strong><span>{{ historyLabels[record.action] }} · {{ new Date(record.time).toLocaleString() }} · {{ sourceLines(record.state.sources).length }} 条来源<span v-if="record.edited"> · 已编辑配置</span><span v-if="record.contentOmitted"> · 大配置仅保留参数</span></span></div>
-                <div><button class="text-button" :disabled="!!busy" @click="restoreConversion(record)">恢复</button><button class="text-button" @click="historyState = historyStore.remove(record.id)">删除</button></div>
-              </li>
-            </ol>
-          </details>
         </div>
 
         <div class="result-column">
@@ -897,6 +891,47 @@ onBeforeUnmount(() => {
       <span>Subweb Next <span class="footer-dot">·</span> 订阅转换工作台</span
       ><span>Standard & Extended</span>
     </footer>
+    <div class="floating-tools">
+      <FloatingPanel
+        title="转换记录"
+        panel-class="conversion-history"
+        :count="historyState.items.length"
+        :model-value="floatingPanel === 'history'"
+        @update:model-value="setFloatingPanel('history', $event)"
+      >
+        <template #default="{ close }">
+          <div class="history-heading">
+            <p class="field-help">仅保存在当前浏览器，最多 20 条。</p>
+            <button v-if="historyState.items.length" type="button" class="text-button" @click="historyState = historyStore.clear()">清空记录</button>
+          </div>
+          <p v-if="historyState.error" class="field-help" role="status">{{ historyState.error }}</p>
+          <p v-if="!historyState.items.length" class="history-empty muted">还没有转换记录。</p>
+          <ol v-else class="history-list">
+            <li v-for="record in historyState.items" :key="record.id">
+              <div>
+                <strong>{{ record.state.profile === 'extended' ? 'Extended' : 'subconverter' }} · {{ record.state.target }}</strong>
+                <span>{{ historyLabels[record.action] }} · {{ new Date(record.time).toLocaleString() }} · {{ sourceLines(record.state.sources).length }} 条来源<span v-if="record.edited"> · 已编辑配置</span><span v-if="record.contentOmitted"> · 大配置仅保留参数</span></span>
+              </div>
+              <div>
+                <button type="button" class="text-button" :disabled="!!busy" @click="close(); restoreConversion(record)">恢复</button>
+                <button type="button" class="text-button" @click="historyState = historyStore.remove(record.id)">删除</button>
+              </div>
+            </li>
+          </ol>
+        </template>
+      </FloatingPanel>
+      <SubscriptionInfo
+        :model-value="floatingPanel === 'subscription'"
+        :sources="sources"
+        :backend="address"
+        :options="options"
+        :header-values="headerValues"
+        :service="runtime.subscriptionInfoUrl || validatorUrl"
+        :token="validatorToken"
+        :auto="runtime.subscriptionInfoAuto !== false"
+        @update:model-value="setFloatingPanel('subscription', $event)"
+      />
+    </div>
     <div v-if="toast" class="toast" role="status">✓ {{ toast }}</div>
   </div>
 </template>

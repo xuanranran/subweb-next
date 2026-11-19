@@ -5,6 +5,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 COPY server.mjs ./
 COPY diagnostics.mjs ./
+COPY subscription-info.mjs subscription-expiry.mjs ./
 COPY LICENSE ./LICENSE
 COPY public/ ./public/
 COPY --from=kernel /mihomo /usr/local/bin/mihomo-alpha

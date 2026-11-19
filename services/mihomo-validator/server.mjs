@@ -8,6 +8,8 @@ import { pathToFileURL } from 'node:url';
 import { timingSafeEqual, randomBytes } from 'node:crypto';
 import { parseDocument, LineCounter } from 'yaml';
 import { kernelDiagnostics } from './diagnostics.mjs';
+import { lookupSubscriptionInfo, publicSubscriptionUrl } from './subscription-info.mjs';
+import { subStoreSubscription } from './subscription-expiry.mjs';
 
 const exec = promisify(execFile);
 const CONFIG_LIMIT = 4 * 1024 * 1024;
@@ -46,7 +48,7 @@ async function servePanel(req, res, settings, session, appOrigins) {
   const appOrigin = [...appOrigins].find((origin) => new URL(origin).host === req.headers.host?.toLowerCase()) || settings.appOrigin;
   if (pathname === '/conf/config.js' && appOrigin) {
     // Public deployment addresses only. The API token never enters static JavaScript.
-    const overrides = { mihomoValidatorUrl: appOrigin };
+    const overrides = { mihomoValidatorUrl: appOrigin, subscriptionInfoUrl: appOrigin };
     if (settings.localBackendUrl) overrides.localBackendUrl = settings.localBackendUrl;
     body = Buffer.concat([body, Buffer.from(`\nObject.assign(window.config, ${JSON.stringify(overrides)});\n`)]);
   }
@@ -65,7 +67,7 @@ function httpError(status, message, details = {}) {
   return Object.assign(new Error(message), { status, ...details });
 }
 
-// The HTTP API accepts YAML only, never a shell command, URL to fetch or user-chosen filename.
+// /validate accepts YAML only, never a shell command, URL to fetch or user-chosen filename.
 // File providers and external file references cannot be transported with a single YAML document.
 export function inspectConfig(text) {
   if (typeof text !== 'string' || !text.trim()) throw httpError(400, '请提交非空配置文本。');
@@ -175,6 +177,8 @@ export async function testConfig(text, settings) {
 
 export function createValidatorServer(settings) {
   let active = false;
+  let infoActive = 0;
+  const subStoreOrigins = new Set(settings.subStoreOrigins || []);
   const appOrigins = new Set([settings.appOrigin, ...(settings.appOrigins || [])].filter(Boolean));
   const origins = new Set(settings.origins || []);
   for (const origin of appOrigins) origins.add(origin);
@@ -200,13 +204,46 @@ export function createValidatorServer(settings) {
     const cookie = req.headers.cookie?.split(';').map((part) => part.trim())
       .find((part) => part.startsWith('subweb_session='))?.slice('subweb_session='.length);
     const panelRequest = settings.staticDir && appOrigins.has(origin) &&
-      req.method === 'POST' && req.url === '/validate' && equalSecret(cookie, session);
+      req.method === 'POST' && ['/validate', '/subscription-info'].includes(req.url) && equalSecret(cookie, session);
     if (settings.token && !panelRequest) {
       if (!equalSecret(req.headers.authorization, `Bearer ${settings.token}`))
         return send(401, { error: '校验服务令牌不正确。' });
     }
     if (req.method === 'GET' && req.url === '/health')
       return send(200, { engine: 'mihomo', version: settings.version, mode: 'config-test' });
+    if (req.method === 'POST' && req.url === '/subscription-info') {
+      if (!/^application\/json(?:;|$)/i.test(req.headers['content-type'] || ''))
+        return send(415, { error: '需要 application/json。' });
+      if (infoActive >= 3) return send(429, { error: '订阅信息查询忙，请稍后重试。' });
+      infoActive++;
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      res.once('close', abort);
+      try {
+        const chunks = []; let size = 0;
+        for await (const chunk of req) {
+          size += chunk.length;
+          if (size > 8192) throw httpError(413, '请求体过大。');
+          chunks.push(chunk);
+        }
+        let body;
+        try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+        catch { throw httpError(400, 'JSON 格式无效。'); }
+        if (!body || Object.keys(body).length !== 1 || typeof body.source !== 'string')
+          throw httpError(400, '请求体只接受订阅地址 source。');
+        const subStore = subStoreSubscription(body.source);
+        const trustedSubStore = !!subStore && subStoreOrigins.has(new URL(subStore.api).origin);
+        if (!trustedSubStore && !publicSubscriptionUrl(body.source))
+          throw httpError(400, '请输入公网 HTTPS 订阅地址或单个 Sub-Store 订阅导出地址。');
+        const info = await (settings.lookupSubscriptionInfo || lookupSubscriptionInfo)(body.source, controller.signal, {
+          subStore: trustedSubStore, resolveFakeDns: settings.resolveFakeDns,
+        });
+        send(200, { kind: 'subscription-expiry', info });
+      } catch (error) {
+        if (!res.destroyed) send(error.status || 502, { error: error.status ? error.message : '无法读取订阅信息，请检查服务网络及订阅权限。' });
+      } finally { res.removeListener('close', abort); infoActive--; }
+      return;
+    }
     if (req.method !== 'POST' || req.url !== '/validate') return send(404, { error: 'Not Found' });
     if (!/^application\/json(?:;|$)/i.test(req.headers['content-type'] || ''))
       return send(415, { error: '需要 application/json。' });
@@ -253,6 +290,9 @@ export async function start() {
     appOrigin: process.env.VALIDATOR_APP_ORIGIN ? new URL(process.env.VALIDATOR_APP_ORIGIN).origin : undefined,
     appOrigins: (process.env.VALIDATOR_APP_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean).map((v) => new URL(v).origin),
     localBackendUrl: process.env.SUBWEB_LOCAL_BACKEND_URL,
+    subStoreOrigins: (process.env.SUBWEB_SUBSTORE_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean)
+      .map((value) => new URL(value).origin),
+    resolveFakeDns: process.env.SUBWEB_SUBSCRIPTION_DOH === 'true',
     origins: (process.env.VALIDATOR_ORIGINS || 'http://127.0.0.1:5173').split(',').map((v) => v.trim()).filter(Boolean),
   });
   const port = Number(process.env.VALIDATOR_PORT || 25550);

@@ -31,6 +31,35 @@ test('kernel output redacts credentials, links and temporary directory', () => {
   assert.doesNotMatch(result, /secret-123|token=a|uuid@host|\/tmp\/private/);
 });
 
+test('subscription info endpoint authenticates, restricts the request and returns expiry data only', async () => {
+  const seen = [];
+  const info = { text: '2026-12-30 21:22:42', source: 'node', via: 'substore' };
+  const server = createValidatorServer({ token: 'fixture-secret', origins: ['https://panel.example'],
+    subStoreOrigins: ['http://store.example'],
+    lookupSubscriptionInfo: async (source, _signal, settings) => { seen.push([source, settings.subStore]); return info; } });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const url = `http://127.0.0.1:${server.address().port}/subscription-info`;
+  const headers = { 'Content-Type': 'application/json', Origin: 'https://panel.example', Authorization: 'Bearer fixture-secret' };
+  const source = 'http://store.example/private/download/MAYING';
+  const post = (body, overrides = {}) => fetch(url, { method: 'POST', headers: { ...headers, ...overrides }, body: JSON.stringify(body) });
+  try {
+    assert.equal((await post({ source }, { Authorization: '' })).status, 401);
+    assert.equal((await post({ source }, { Origin: 'https://evil.example' })).status, 403);
+    assert.equal((await post({ source: 'http://store.example/api/subs' })).status, 400);
+    assert.equal((await post({ source: 'http://somewhere.example/download/TAG' })).status, 400);
+    assert.equal((await post({ source: 'https://127.0.0.1/metadata' })).status, 400);
+    assert.equal((await post({ source, command: 'anything' })).status, 400);
+    const response = await post({ source });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { kind: 'subscription-expiry', info });
+    const publicSource = 'https://provider.example/download/TAG';
+    assert.equal((await post({ source: publicSource })).status, 200);
+    assert.deepEqual(seen, [[source, true], [publicSource, false]]);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+  } finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
+});
+
 test('HTTP contract authenticates and checks CORS before accepting exact YAML, while refusing overlap', async () => {
   let release;
   const received = [];
@@ -89,6 +118,8 @@ test('bundled panel serves assets and uses an origin-bound session without expos
     staticDir: directory, appOrigin, token: 'fixture-secret',
     localBackendUrl: 'http://panel.example:25500', origins: ['https://other.example'],
     run: async () => report,
+    lookupSubscriptionInfo: async () => null,
+    subStoreOrigins: ['http://store.example'],
   });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -113,6 +144,10 @@ test('bundled panel serves assets and uses an origin-bound session without expos
       method: 'POST', headers: { ...headers, ...overrides }, body: JSON.stringify({ config: valid }),
     });
     assert.deepEqual(await (await post()).json(), report);
+    const infoResponse = await fetch(`${url}/subscription-info`, { method: 'POST', headers,
+      body: JSON.stringify({ source: 'http://store.example/private/download/MAYING' }) });
+    assert.equal(infoResponse.status, 200);
+    assert.deepEqual(await infoResponse.json(), { kind: 'subscription-expiry', info: null });
     assert.equal((await post({ Cookie: '' })).status, 401);
     assert.equal((await post({ Cookie: 'subweb_session=wrong' })).status, 401);
     assert.equal((await post({ Origin: '' })).status, 401);

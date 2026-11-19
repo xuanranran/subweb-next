@@ -50,6 +50,7 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
   for (const key of ['requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle'])
     Object.defineProperty(globalThis, key, { configurable: true, value: window[key].bind(window) });
   window.config = {
+    subscriptionInfoAuto: false,
     apiUrl: [
       { value: 'https://api.miaoceo.com', text: 'SubConverter-Extended', profile: 'extended' },
       { value: 'https://sub.miaoceo.com', text: 'subconverter', profile: 'standard' },
@@ -101,6 +102,8 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
       ['src/components/OptionField.vue', 'OptionField.mjs'],
       ['src/components/CodeEditor.vue', 'CodeEditor.mjs'],
       ['src/components/ConfigDialog.vue', 'ConfigDialog.mjs'],
+      ['src/components/SubscriptionInfo.vue', 'SubscriptionInfo.mjs'],
+      ['src/components/FloatingPanel.vue', 'FloatingPanel.mjs'],
     ]) {
       const source = await readFile(path.join(testRoot, '..', relative), 'utf8');
       const { descriptor } = parse(source);
@@ -108,6 +111,9 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
         .content.replaceAll('./components/OptionField.vue', './OptionField.mjs')
         .replaceAll('./components/CodeEditor.vue', './CodeEditor.mjs')
         .replaceAll('./components/ConfigDialog.vue', './ConfigDialog.mjs')
+        .replaceAll('./components/SubscriptionInfo.vue', './SubscriptionInfo.mjs')
+        .replace(/\.\/(?:components\/)?FloatingPanel\.vue/g, './FloatingPanel.mjs')
+        .replaceAll('../lib/subscription-info.js', '../../src/lib/subscription-info.js')
         .replaceAll('../lib/code-editor.js', '../../src/lib/code-editor.js')
         .replaceAll('./lib/', '../../src/lib/');
       await writeFile(path.join(scratch, filename), compiled);
@@ -152,7 +158,7 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     changeSystemTheme(true);
     await settle();
     await setInput('#sources', 'https://example.com/sub?a=1&token=a+b');
-    assert.equal(requests.length, 3, 'editing subscriptions stays local');
+    assert.equal(requests.length, 3, 'editing subscriptions stays local when expiry lookup is disabled');
     assert.equal(
       new URL(root.querySelector('#result-link').value).searchParams.get('url'),
       'https://example.com/sub?a=1&token=a+b',
@@ -498,12 +504,27 @@ test('the actual Vue panel switches profiles, resets incompatible fields and inv
     await settle();
     domainButton('保存到记录').click();
     await settle();
+    domainRoot.querySelector('.dialog-close').click();
+    await settle();
     const beforeRestore = requests.length;
     await domainInput('#sources', 'https://example.com/another-source');
+    assert.equal(domainRoot.querySelector('.conversion-history'), null);
+    const historyTrigger = domainRoot.querySelector('.floating-trigger[aria-label^="转换记录"]');
+    historyTrigger.click();
+    await settle();
+    assert.equal(historyTrigger.getAttribute('aria-expanded'), 'true');
+    domainButton('订阅信息').click();
+    await settle();
+    assert.equal(domainRoot.querySelector('.conversion-history'), null, 'only one floating panel is open');
+    assert.ok(domainRoot.querySelector('.subscription-info'));
+    historyTrigger.click();
+    await settle();
+    assert.equal(domainRoot.querySelector('.subscription-info'), null);
     const latestRestore = domainRoot.querySelector('.history-list button');
     latestRestore.click();
     for (let i = 0; i < 4; i++) await settle();
-    assert.equal(requests.length, beforeRestore, 'restoring local history sends no subscription or config to a server');
+    assert.equal(domainRoot.querySelector('.conversion-history'), null, 'restoring closes the history panel');
+    assert.equal(requests.length, beforeRestore, 'restoring history with expiry lookup disabled sends no subscription or config');
     assert.equal(domainRoot.querySelector('#sources').value, 'https://example.com/sub');
     assert.equal(domainRoot.querySelector('.editor-fallback')?.value || EditorView.findFromDOM(domainRoot.querySelector('.cm-editor')).state.doc.toString(), editedConfig);
     assert.doesNotMatch(window.localStorage.getItem('subweb-next-conversions-v1'), /validation-secret|secret-value/);
